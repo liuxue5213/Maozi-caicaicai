@@ -1,11 +1,5 @@
 # 部署指南
 
-## 服务器信息
-
-- **IP**: 120.48.13.152
-- **SSH**: `ssh root@120.48.13.152` (端口 120)
-- **密码**: liuxue5213
-
 ## 端口分配
 
 | 服务 | 端口 | 说明 |
@@ -19,7 +13,7 @@
 
 ```bash
 # SSH 登录
-ssh root@120.48.13.152
+ssh root@你的服务器IP
 
 # 安装 Node.js 20
 curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
@@ -58,7 +52,7 @@ cd client
 npx expo export --platform web
 
 # 上传 web-build 到服务器
-scp -P 120 -r web-build/* root@120.48.13.152:/opt/maozi-rps/web/
+scp -r web-build/* root@你的服务器IP:/opt/maozi-rps/web/
 
 # 配置 Nginx
 cp nginx.conf /etc/nginx/sites-available/maozi-rps
@@ -82,6 +76,6 @@ curl -I http://localhost:60200
 
 ## 访问地址
 
-- Web 前端: http://120.48.13.152:60200
-- 后端 API: http://120.48.13.152:60205/api
-- WebSocket: ws://120.48.13.152:60205/ws
+- Web 前端: http://你的服务器IP:60200
+- 后端 API: http://你的服务器IP:60205/api
+- WebSocket: ws://你的服务器IP:60205/ws

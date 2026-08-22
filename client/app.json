@@ -34,8 +34,8 @@
       "bundler": "metro"
     },
     "extra": {
-      "apiUrl": "http://120.48.13.152:60205/api",
-      "wsUrl": "ws://120.48.13.152:60205/ws"
+      "apiUrl": "",
+      "wsUrl": ""
     }
   }
 }

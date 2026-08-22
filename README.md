@@ -64,13 +64,13 @@ npm run android # Android 开发
 后端环境变量（`server/.env`）：
 ```
 PORT=60205
-JWT_SECRET=你的密钥
+JWT_SECRET=请修改为强密钥
 ```
 
 前端环境变量（`client/.env`）：
 ```
-EXPO_PUBLIC_API_URL=http://120.48.13.152:60205/api
-EXPO_PUBLIC_WS_URL=ws://120.48.13.152:60205/ws
+EXPO_PUBLIC_API_URL=http://你的服务器IP:60205/api
+EXPO_PUBLIC_WS_URL=ws://你的服务器IP:60205/ws
 ```
 
 ## 服务器部署
@@ -117,9 +117,4 @@ npx expo export --platform web
 |------|------|
 | Web 前端 | 60200 |
 | 后端 API + WebSocket | 60205 |
-| SSH | 120 |
-
-## 服务器信息
-
-- IP: 120.48.13.152
 - 用户: root

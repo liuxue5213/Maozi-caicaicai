@@ -4,9 +4,9 @@
 
 import { useAuthStore } from '../store/authStore';
 
-// 服务器地址配置
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://120.48.13.152:60205/api';
-const WS_BASE_URL = process.env.EXPO_PUBLIC_WS_URL || 'ws://120.48.13.152:60205/ws';
+// 服务器地址配置（通过环境变量注入，不硬编码）
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || '';
+const WS_BASE_URL = process.env.EXPO_PUBLIC_WS_URL || '';
 
 export { API_BASE_URL, WS_BASE_URL };
 
