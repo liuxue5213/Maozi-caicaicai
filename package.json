@@ -2,7 +2,7 @@
   "name": "maozi-rps",
   "version": "1.0.0",
   "private": true,
-  "description": "猜拳对战 - Rock Paper Scissors Online",
+  "description": "帽子猜猜猜 - Rock Paper Scissors Online",
   "workspaces": [
     "client",
     "server",

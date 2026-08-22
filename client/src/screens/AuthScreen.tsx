@@ -65,7 +65,7 @@ export function AuthScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
           <Text style={styles.emoji}>✊✌️✋</Text>
-          <Text style={styles.title}>猜拳对战</Text>
+          <Text style={styles.title}>帽子猜猜猜</Text>
           <Text style={styles.subtitle}>注册账号，开始对战</Text>
         </View>
 
