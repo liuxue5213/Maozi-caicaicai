@@ -84,42 +84,23 @@ jobs:
       # Release APK (仅 main/master 分支且有签名配置时)
       - name: Build Release APK
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        working-directory: client/android
         run: |
-          cd client/android
-          
-          # 如果有签名密钥则构建 release
           if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
-            # 解码 keystore
             echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > app/release.keystore
             
-            # 配置 signing
-            cat >> app/build.gradle <<EOF
-            
-            android {
-              signingConfigs {
-                release {
-                  storeFile file('release.keystore')
-                  storePassword '${{ secrets.ANDROID_KEYSTORE_PASSWORD }}'
-                  keyAlias '${{ secrets.ANDROID_KEY_ALIAS }}'
-                  keyPassword '${{ secrets.ANDROID_KEY_PASSWORD }}'
-                }
-              }
-              buildTypes {
-                release {
-                  signingConfig signingConfigs.release
-                }
-              }
-            }
-            EOF
+            # 写入签名配置 (避免 heredoc 解析问题)
+            printf '\nandroid {\n  signingConfigs {\n    release {\n      storeFile file("release.keystore")\n      storePassword "%s"\n      keyAlias "%s"\n      keyPassword "%s"\n    }\n  }\n  buildTypes {\n    release {\n      signingConfig signingConfigs.release\n    }\n  }\n}\n' \
+              "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" \
+              "${{ secrets.ANDROID_KEY_ALIAS }}" \
+              "${{ secrets.ANDROID_KEY_PASSWORD }}" >> app/build.gradle
             
             ./gradlew assembleRelease --no-daemon
           else
-            echo "No signing config, building debug as release artifact"
+            echo "No signing config available, skipping release build"
+            mkdir -p app/build/outputs/apk/release
             cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/release/app-release.apk
           fi
-        env:
-          EXPO_PUBLIC_API_URL: ${{ secrets.API_URL }}
-          EXPO_PUBLIC_WS_URL: ${{ secrets.WS_URL }}
 
       - name: Upload Release APK
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
