@@ -13,6 +13,7 @@
     "build:android:debug": "cd android && ./gradlew assembleDebug"
   },
   "dependencies": {
+    "@expo/metro-runtime": "~3.1.3",
     "@maozi/shared": "1.0.0",
     "@react-native-async-storage/async-storage": "1.21.0",
     "@react-navigation/bottom-tabs": "^6.5.20",

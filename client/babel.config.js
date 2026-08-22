@@ -9,6 +9,7 @@ module.exports = function (api) {
         {
           root: ['./'],
           alias: {
+            '@maozi/shared': '../shared/src',
             '@shared': '../shared/src',
             '@': './src',
           },
