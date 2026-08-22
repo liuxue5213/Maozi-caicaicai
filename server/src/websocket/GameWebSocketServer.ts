@@ -373,29 +373,11 @@ export class GameWebSocketServer {
     switch (phase) {
       case GamePhase.PREPARATION:
         duration = GAME_TIMINGS.PREPARATION_MS;
-        this.broadcastToGame(game, {
-          type: ServerMessage.PHASE_UPDATE,
-          payload: {
-            phase: GamePhase.PREPARATION,
-            roundNumber: game.roundNumber,
-            timeRemaining: duration,
-            playerScore: game.players[0].score,
-            opponentScore: game.players[1].score,
-          },
-        });
+        this.broadcastPhaseUpdate(game, GamePhase.PREPARATION, duration);
         break;
       case GamePhase.SELECTING:
         duration = GAME_TIMINGS.SELECTING_MS;
-        this.broadcastToGame(game, {
-          type: ServerMessage.PHASE_UPDATE,
-          payload: {
-            phase: GamePhase.SELECTING,
-            roundNumber: game.roundNumber,
-            timeRemaining: duration,
-            playerScore: game.players[0].score,
-            opponentScore: game.players[1].score,
-          },
-        });
+        this.broadcastPhaseUpdate(game, GamePhase.SELECTING, duration);
         break;
       case GamePhase.SETTLEMENT:
         duration = GAME_TIMINGS.SETTLEMENT_MS;
@@ -403,16 +385,7 @@ export class GameWebSocketServer {
         break;
       case GamePhase.BREAK:
         duration = GAME_TIMINGS.BREAK_MS;
-        this.broadcastToGame(game, {
-          type: ServerMessage.PHASE_UPDATE,
-          payload: {
-            phase: GamePhase.BREAK,
-            roundNumber: game.roundNumber,
-            timeRemaining: duration,
-            playerScore: game.players[0].score,
-            opponentScore: game.players[1].score,
-          },
-        });
+        this.broadcastPhaseUpdate(game, GamePhase.BREAK, duration);
         break;
       case GamePhase.FINISHED:
         this.processGameOver(game);
@@ -671,6 +644,25 @@ export class GameWebSocketServer {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(message));
     }
+  }
+
+  /**
+   * 修复: 按玩家视角发送各自分数（玩家1看到自己的分为 playerScore，玩家2同理）
+   */
+  private broadcastPhaseUpdate(game: GameRoom, phase: GamePhase, duration: number): void {
+    game.players.forEach((player, idx) => {
+      const opponentIdx = idx === 0 ? 1 : 0;
+      this.sendToClient(player.ws, {
+        type: ServerMessage.PHASE_UPDATE,
+        payload: {
+          phase,
+          roundNumber: game.roundNumber,
+          timeRemaining: duration,
+          playerScore: game.players[idx].score,
+          opponentScore: game.players[opponentIdx].score,
+        },
+      });
+    });
   }
 
   private broadcastToGame(game: GameRoom, message: { type: ServerMessage; payload: any }): void {

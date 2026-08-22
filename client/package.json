@@ -5,8 +5,8 @@
   "scripts": {
     "start": "expo start",
     "dev": "expo start --web --port 60200",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web --port 60200",
     "build:web": "expo export --platform web",
     "build:android": "cd android && ./gradlew assembleRelease",

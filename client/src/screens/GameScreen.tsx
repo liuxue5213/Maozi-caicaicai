@@ -64,7 +64,7 @@ export function GameScreen() {
     setTimeRemaining(payload.timeRemaining);
     setLocalEndTime(Date.now() + payload.timeRemaining); // 设置本地倒计时
     setPlayerScore(payload.playerScore);
-    setOpponentScore(payload.playerScore);
+    setOpponentScore(payload.opponentScore);
 
     // 进入选择阶段
     if (payload.phase === GamePhase.SELECTING) {
