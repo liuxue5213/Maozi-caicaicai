@@ -69,32 +69,30 @@ jobs:
           EXPO_PUBLIC_API_URL: ${{ secrets.API_URL || 'http://120.48.13.152:60205/api' }}
           EXPO_PUBLIC_WS_URL: ${{ secrets.WS_URL || 'ws://120.48.13.152:60205/ws' }}
 
-      - name: Create Debug Signing Config
-        working-directory: client/android
+      - name: Pre-bundle JS for Debug APK
         run: |
-          # 生成 debug keystore 用于签名 release 构建
-          keytool -genkeypair -v \
-            -storepass android \
-            -alias androiddebugkey \
-            -keypass android \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -dname "CN=Android Debug,O=Android,C=US" \
-            -keystore app/debug.keystore 2>&1 || true
-          
-          # 配置 gradle 使用 debug keystore 签名 release
-          if ! grep -q "signingConfigs" app/build.gradle; then
-            printf '\nandroid {\n  signingConfigs {\n    release {\n      storeFile file("debug.keystore")\n      storePassword "android"\n      keyAlias "androiddebugkey"\n      keyPassword "android"\n    }\n  }\n  buildTypes {\n    release {\n      signingConfig signingConfigs.release\n    }\n  }\n}\n' >> app/build.gradle
-          fi
+          cd client
+          # 手动打包 JS bundle 放入 assets (让 debug APK 脱离 Metro)
+          mkdir -p android/app/src/main/assets
+          npx expo export:embed \
+            --platform android \
+            --dev false \
+            --entry-file index.ts \
+            --bundle-output android/app/src/main/assets/index.android.bundle \
+            --assets-dest android/app/src/main/res
+        env:
+          EXPO_PUBLIC_API_URL: ${{ secrets.API_URL || 'http://120.48.13.152:60205/api' }}
+          EXPO_PUBLIC_WS_URL: ${{ secrets.WS_URL || 'ws://120.48.13.152:60205/ws' }}
 
-      - name: Build APK (Release with bundled JS)
+      - name: Build Debug APK
         run: |
           cd client/android
-          # 修复: 使用 release 构建自动打包 JS bundle，无需 Metro 服务器
-          ./gradlew assembleRelease --no-daemon
+          # 构建 debug APK (无需签名，JS 已预打包)
+          ./gradlew assembleDebug --no-daemon
 
-      - name: Upload APK
+      - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: maozi-rps-apk
-          path: client/android/app/build/outputs/apk/release/app-release.apk
+          name: maozi-rps-debug-apk
+          path: client/android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 90
