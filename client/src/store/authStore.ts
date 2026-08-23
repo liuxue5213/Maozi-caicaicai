@@ -29,28 +29,47 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isLoading: true,
 
   setAuth: async (user, token, stats) => {
-    await AsyncStorage.multiSet([
-      [TOKEN_KEY, token],
-      [USER_KEY, JSON.stringify(user)],
-      [STATS_KEY, JSON.stringify(stats)],
-    ]);
-    set({ user, token, stats, isAuthenticated: true, isLoading: false });
+    try {
+      await AsyncStorage.multiSet([
+        [TOKEN_KEY, token],
+        [USER_KEY, JSON.stringify(user)],
+        [STATS_KEY, JSON.stringify(stats)],
+      ]);
+      set({ user, token, stats, isAuthenticated: true, isLoading: false });
+    } catch (error) {
+      console.error('[AuthStore] 保存认证信息失败:', error);
+      // 即使存储失败，也更新内存状态
+      set({ user, token, stats, isAuthenticated: true, isLoading: false });
+    }
   },
 
   setStats: async (stats) => {
-    await AsyncStorage.setItem(STATS_KEY, JSON.stringify(stats));
+    try {
+      await AsyncStorage.setItem(STATS_KEY, JSON.stringify(stats));
+    } catch (error) {
+      console.error('[AuthStore] 保存统计失败:', error);
+    }
     set({ stats });
   },
 
   updateNickname: (nickname) => {
     const { user } = get();
     if (user) {
-      set({ user: { ...user, nickname } });
+      const updatedUser = { ...user, nickname };
+      set({ user: updatedUser });
+      // 异步持久化，失败时仅记录
+      AsyncStorage.setItem(USER_KEY, JSON.stringify(updatedUser)).catch((err) =>
+        console.error('[AuthStore] 保存昵称失败:', err)
+      );
     }
   },
 
   logout: async () => {
-    await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY, STATS_KEY]);
+    try {
+      await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY, STATS_KEY]);
+    } catch (error) {
+      console.error('[AuthStore] 清除认证信息失败:', error);
+    }
     set({ user: null, token: null, stats: null, isAuthenticated: false, isLoading: false });
   },
 

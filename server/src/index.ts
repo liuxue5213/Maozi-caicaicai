@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import http from 'http';
 import { WebSocketServer } from 'ws';
 import { authRouter } from './routes/auth';
@@ -12,12 +13,19 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
 
-// 中间件
-app.use(cors({
-  origin: '*', // 生产环境需要限制
-  credentials: true,
-}));
-app.use(express.json({ limit: '10kb' })); // 修复: 限制请求体大小
+// CORS 配置：根据环境变量限制来源
+const corsOrigins = process.env.CORS_ORIGINS;
+const corsOptions = corsOrigins
+  ? {
+      origin: corsOrigins.split(',').map(s => s.trim()),
+      credentials: true,
+    }
+  : process.env.NODE_ENV === 'production'
+    ? { origin: [], credentials: true } // 生产环境默认不允许任何来源
+    : { origin: '*', credentials: true }; // 开发环境允许所有
+
+app.use(cors(corsOptions));
+app.use(express.json({ limit: '10kb' }));
 
 // 请求日志
 app.use((req, _res, next) => {
@@ -25,10 +33,28 @@ app.use((req, _res, next) => {
   next();
 });
 
+// 速率限制：认证接口每IP每分钟最多10次
+const authLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1分钟
+  max: 10,
+  message: { success: false, error: '请求过于频繁，请稍后再试' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// 通用API速率限制：每IP每分钟最多60次
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  message: { success: false, error: '请求过于频繁，请稍后再试' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // REST 路由
-app.use('/api/auth', authRouter);
-app.use('/api/user', userRouter);
-app.use('/api/leaderboard', leaderboardRouter);
+app.use('/api/auth', authLimiter, authRouter);
+app.use('/api/user', apiLimiter, userRouter);
+app.use('/api/leaderboard', apiLimiter, leaderboardRouter);
 
 // 健康检查
 app.get('/api/health', (_req, res) => {

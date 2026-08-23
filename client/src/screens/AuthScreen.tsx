@@ -41,7 +41,7 @@ export function AuthScreen() {
         : await api.register(username.trim(), password, nickname.trim());
       
       // apiRequest 已解包 data.data，直接获取
-      const user = response?.user;
+      const user = response?.user ? { ...response.user, avatar: response.user.avatar ?? undefined } : null;
       const token = response?.token;
       const stats = response?.stats;
       

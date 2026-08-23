@@ -11,7 +11,9 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: 60205,
-        JWT_SECRET: 'maozi-rps-secret-key-change-this',
+        // JWT_SECRET 请通过环境变量或 .env 文件设置
+        JWT_SECRET: process.env.JWT_SECRET || '',
+        CORS_ORIGINS: 'http://120.48.13.152:60200,http://localhost:60200',
       },
       error_file: '/var/log/maozi-rps/error.log',
       out_file: '/var/log/maozi-rps/output.log',

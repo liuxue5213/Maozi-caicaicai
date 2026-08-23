@@ -14,10 +14,15 @@ interface RequestOptions {
   method?: string;
   body?: any;
   headers?: Record<string, string>;
+  timeout?: number; // 超时时间（毫秒）
 }
+
+// 默认超时时间
+const DEFAULT_TIMEOUT = 10000; // 10秒
 
 export async function apiRequest<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
   const token = useAuthStore.getState().token;
+  const timeout = options.timeout || DEFAULT_TIMEOUT;
   
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -28,11 +33,26 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    method: options.method || 'GET',
-    headers,
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  });
+  // 使用 AbortController 实现超时控制
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      method: options.method || 'GET',
+      headers,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      signal: controller.signal,
+    });
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error(`请求超时（${timeout / 1000}秒）`);
+    }
+    throw new Error('网络连接失败，请检查网络');
+  }
+  clearTimeout(timeoutId);
 
   const data = await response.json();
 

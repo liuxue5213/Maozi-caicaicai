@@ -1,0 +1,100 @@
+name: Deploy All (Frontend + Backend)
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # ---- 构建 Shared ----
+      - name: Build shared
+        run: |
+          cd shared
+          npm install
+          npm run build
+
+      # ---- 构建后端 ----
+      - name: Build server
+        run: |
+          cd server
+          npm install
+          npm run build
+
+      # ---- 构建前端 Web ----
+      - name: Install client dependencies
+        run: |
+          cd client
+          npm install
+
+      - name: Build web frontend
+        run: |
+          cd client
+          npx expo export --platform web --output-dir web-build
+        env:
+          EXPO_PUBLIC_API_URL: http://${{ secrets.SERVER_HOST }}:60205/api
+          EXPO_PUBLIC_WS_URL: ws://${{ secrets.SERVER_HOST }}:60205/ws
+
+      # ---- 部署后端到服务器 ----
+      - name: Deploy backend via SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_SSH_PORT || 22 }}
+          source: "server/dist/*,server/package.json,server/ecosystem.config.js"
+          target: "/opt/maozi-rps/server"
+          strip_components: 1
+
+      # ---- 部署前端到服务器 ----
+      - name: Deploy frontend via SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_SSH_PORT || 22 }}
+          source: "client/web-build/*"
+          target: "/opt/maozi-rps/web"
+          strip_components: 2
+
+      # ---- 重启后端服务 ----
+      - name: Restart backend service
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_SSH_PORT || 22 }}
+          script: |
+            cd /opt/maozi-rps/server
+            npm install --production
+            pm2 restart maozi-rps-server || pm2 start ecosystem.config.js
+            pm2 save
+            
+      # ---- 重启 Nginx ----
+      - name: Reload nginx
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_SSH_PORT || 22 }}
+          script: |
+            nginx -t && systemctl reload nginx
+            echo "部署完成！"
+            echo "前端: http://${{ secrets.SERVER_HOST }}:60200"
+            echo "后端: http://${{ secrets.SERVER_HOST }}:60205"

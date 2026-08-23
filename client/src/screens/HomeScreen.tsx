@@ -36,11 +36,11 @@ export function HomeScreen({ navigation }: HomeScreenProps) {
   };
 
   const handleStartGame = (mode: GameMode) => {
-    nav.navigate('Game', { mode, matchType: 'online' });
+    (nav as any).navigate('Game', { mode, matchType: 'online' });
   };
 
   const handleStartAiGame = (mode: GameMode) => {
-    nav.navigate('Game', { mode, matchType: 'ai' });
+    (nav as any).navigate('Game', { mode, matchType: 'ai' });
   };
 
   return (
