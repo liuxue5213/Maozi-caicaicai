@@ -117,7 +117,7 @@ export function HomeScreen({ navigation }: HomeScreenProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: '#f5f5f5',
   },
   header: {
     padding: 20,
@@ -126,7 +126,7 @@ const styles = StyleSheet.create({
   welcome: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#fff',
+    color: '#333',
   },
   onlineCount: {
     fontSize: 14,
@@ -134,16 +134,21 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   statsCard: {
-    backgroundColor: '#16213e',
+    backgroundColor: '#fff',
     margin: 16,
     borderRadius: 16,
     padding: 20,
     borderWidth: 1,
-    borderColor: '#0f3460',
+    borderColor: '#e0e0e0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   cardTitle: {
     fontSize: 16,
-    color: '#aaa',
+    color: '#666',
     marginBottom: 16,
   },
   statsRow: {
@@ -156,11 +161,11 @@ const styles = StyleSheet.create({
   statValue: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#fff',
+    color: '#333',
   },
   statLabel: {
     fontSize: 12,
-    color: '#aaa',
+    color: '#666',
     marginTop: 4,
   },
   section: {
@@ -169,12 +174,12 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#fff',
+    color: '#333',
     marginBottom: 4,
   },
   sectionDesc: {
     fontSize: 14,
-    color: '#aaa',
+    color: '#666',
     marginBottom: 12,
   },
   modeGrid: {

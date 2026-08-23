@@ -133,7 +133,7 @@ export function LeaderboardScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a2e',
+    backgroundColor: '#f5f5f5',
   },
   tabContainer: {
     flexDirection: 'row',
@@ -145,14 +145,17 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 12,
     borderRadius: 12,
-    backgroundColor: '#16213e',
+    backgroundColor: '#fff',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
   },
   tabActive: {
     backgroundColor: '#6200EE',
+    borderColor: '#6200EE',
   },
   tabText: {
-    color: '#aaa',
+    color: '#666',
     fontSize: 16,
     fontWeight: 'bold',
   },
@@ -170,12 +173,17 @@ const styles = StyleSheet.create({
   item: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#16213e',
+    backgroundColor: '#fff',
     borderRadius: 12,
     padding: 16,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: '#0f3460',
+    borderColor: '#e0e0e0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   itemTop3: {
     borderColor: '#FFD700',
@@ -189,7 +197,7 @@ const styles = StyleSheet.create({
     fontSize: 24,
   },
   rankText: {
-    color: '#aaa',
+    color: '#666',
     fontSize: 18,
     fontWeight: 'bold',
   },
@@ -198,12 +206,12 @@ const styles = StyleSheet.create({
     marginLeft: 12,
   },
   nickname: {
-    color: '#fff',
+    color: '#333',
     fontSize: 16,
     fontWeight: 'bold',
   },
   detailText: {
-    color: '#aaa',
+    color: '#666',
     fontSize: 12,
     marginTop: 4,
   },
