@@ -9,9 +9,11 @@ export const authRouter = Router();
 // 注册
 authRouter.post('/register', async (req: Request, res: Response) => {
   try {
-    const { username, password, nickname } = req.body;
+    const { password } = req.body;
+    const username = typeof req.body.username === 'string' ? req.body.username.trim() : '';
+    const nickname = typeof req.body.nickname === 'string' ? req.body.nickname.trim() : '';
 
-    if (!username || !password) {
+    if (!username || typeof password !== 'string' || !password) {
       res.status(400).json({ success: false, error: '用户名和密码不能为空' });
       return;
     }
@@ -36,6 +38,10 @@ authRouter.post('/register', async (req: Request, res: Response) => {
     const passwordHash = await bcrypt.hash(password, 10);
     const userId = uuidv4();
     const finalNickname = nickname || username;
+    if (finalNickname.length > 20) {
+      res.status(400).json({ success: false, error: '昵称长度应为 1-20 个字符' });
+      return;
+    }
 
     db.createUser({
       id: userId,
@@ -65,7 +71,11 @@ authRouter.post('/register', async (req: Request, res: Response) => {
         stats,
       },
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      res.status(409).json({ success: false, error: '用户名已被注册' });
+      return;
+    }
     console.error('[Auth] 注册失败:', error);
     res.status(500).json({ success: false, error: '服务器错误' });
   }
@@ -74,9 +84,10 @@ authRouter.post('/register', async (req: Request, res: Response) => {
 // 登录
 authRouter.post('/login', async (req: Request, res: Response) => {
   try {
-    const { username, password } = req.body;
+    const { password } = req.body;
+    const username = typeof req.body.username === 'string' ? req.body.username.trim() : '';
 
-    if (!username || !password) {
+    if (!username || typeof password !== 'string' || !password) {
       res.status(400).json({ success: false, error: '用户名和密码不能为空' });
       return;
     }

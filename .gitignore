@@ -38,6 +38,9 @@ Thumbs.db
 */.env
 */.env.local
 
+# SQLite runtime data
+server/data/
+
 # Logs
 *.log
 npm-debug.log*

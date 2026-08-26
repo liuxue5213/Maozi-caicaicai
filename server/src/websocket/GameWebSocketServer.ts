@@ -153,6 +153,7 @@ export class GameWebSocketServer {
 
     client.userId = user.id;
     client.username = user.username;
+    client.nickname = user.nickname;
     client.isAuthenticated = true;
     onlineUsers.add(user.id);
 
@@ -169,6 +170,10 @@ export class GameWebSocketServer {
     if (!client || client.isMatching || client.currentGameId) return;
 
     const mode = payload?.mode || GameMode.BEST_OF_3;
+    if (!Object.values(GameMode).includes(mode)) {
+      this.sendToClient(client.ws, { type: ServerMessage.ERROR, payload: { error: '无效的对局模式' } });
+      return;
+    }
     client.isMatching = true;
     client.matchingMode = mode;
 
@@ -219,6 +224,10 @@ export class GameWebSocketServer {
     if (!client) return;
 
     const mode = payload?.mode || GameMode.BEST_OF_3;
+    if (!Object.values(GameMode).includes(mode)) {
+      this.sendToClient(client.ws, { type: ServerMessage.ERROR, payload: { error: '无效的对局模式' } });
+      return;
+    }
     const aiNickname = AI_NICKNAMES[Math.floor(Math.random() * AI_NICKNAMES.length)];
     const aiUser: DbUser = {
       id: 'ai-' + uuidv4(),
@@ -258,7 +267,7 @@ export class GameWebSocketServer {
             id: player1.userId,
             username: player1.username,
             passwordHash: '',
-            nickname: player1.username,
+            nickname: player1.nickname,
             avatar: null,
             createdAt: 0,
           },
@@ -286,6 +295,12 @@ export class GameWebSocketServer {
     this.games.set(gameId, game);
     player1.currentGameId = gameId;
     player1.isMatching = false;
+    player1.matchingMode = null;
+    if (!isAi && !('user' in player2)) {
+      player2.currentGameId = gameId;
+      player2.isMatching = false;
+      player2.matchingMode = null;
+    }
 
     // 获取对手信息
     const opponentUser = 'user' in player2 ? player2.user : { id: player2.userId, nickname: player2.nickname, avatar: null as string | null };
@@ -304,7 +319,7 @@ export class GameWebSocketServer {
       (player2.ws as WebSocket).send(
         JSON.stringify({
           type: ServerMessage.GAME_START,
-          payload: { ...p1Payload, opponent: { id: player1.userId, nickname: player1.username, avatar: null } },
+          payload: { ...p1Payload, opponent: { id: player1.userId, nickname: player1.nickname, avatar: null } },
         })
       );
     }
@@ -443,11 +458,14 @@ export class GameWebSocketServer {
     const isDraw = game.players[0].score === game.players[1].score;
     const duration = Date.now() - game.startedAt;
 
-    // 更新数据库（修复平局处理）
-    const userStats = db.updateStatsAfterGame(
+    // 双方各自结算；AI 对局只结算真人玩家。
+    const player1Stats = db.updateStatsAfterGame(
       game.players[0].user.id,
       isDraw ? null : player1Won
     );
+    const player2Stats = game.isAi
+      ? null
+      : db.updateStatsAfterGame(game.players[1].user.id, isDraw ? null : !player1Won);
 
     // 添加游戏记录
     db.addGameRecord({
@@ -463,8 +481,8 @@ export class GameWebSocketServer {
       durationMs: duration,
     });
 
-    const gameCountTitle = getGameCountTitle(userStats.totalGames);
-    const winStreakTitle = getWinStreakTitle(userStats.currentWinStreak);
+    const gameCountTitle = getGameCountTitle(player1Stats.totalGames);
+    const winStreakTitle = getWinStreakTitle(player1Stats.currentWinStreak);
 
     const gameOverPayload = {
       gameId: game.id,
@@ -473,21 +491,29 @@ export class GameWebSocketServer {
       finalScore: { player: game.players[0].score, opponent: game.players[1].score },
       totalRounds: game.roundNumber,
       durationMs: duration,
-      stats: userStats,
+      stats: player1Stats,
       titles: { gameCountTitle, winStreakTitle },
     };
 
     // 发送给玩家1
-    game.players[0].ws.send(JSON.stringify({ type: ServerMessage.GAME_OVER, payload: gameOverPayload }));
+    this.sendToClient(game.players[0].ws, { type: ServerMessage.GAME_OVER, payload: gameOverPayload });
 
     // 发送给玩家2（反转胜负）
     if (!game.isAi) {
-      game.players[1].ws.send(
-        JSON.stringify({
-          type: ServerMessage.GAME_OVER,
-          payload: { ...gameOverPayload, playerWon: !player1Won && !isDraw },
-        })
-      );
+      const player2Won = !player1Won && !isDraw;
+      this.sendToClient(game.players[1].ws, {
+        type: ServerMessage.GAME_OVER,
+        payload: {
+          ...gameOverPayload,
+          playerWon: player2Won,
+          finalScore: { player: game.players[1].score, opponent: game.players[0].score },
+          stats: player2Stats,
+          titles: {
+            gameCountTitle: getGameCountTitle(player2Stats!.totalGames),
+            winStreakTitle: getWinStreakTitle(player2Stats!.currentWinStreak),
+          },
+        },
+      });
     }
 
     // 修复: 清理游戏房间
@@ -528,6 +554,10 @@ export class GameWebSocketServer {
 
     const game = this.games.get(client.currentGameId);
     if (!game || game.phase !== GamePhase.SELECTING) return;
+    if (!Object.values(GameChoice).includes(payload?.choice)) {
+      this.sendToClient(client.ws, { type: ServerMessage.ERROR, payload: { error: '无效的出拳' } });
+      return;
+    }
 
     const playerIdx = game.players.findIndex((p) => p.user.id === client.userId);
     if (playerIdx < 0) return;
@@ -583,7 +613,9 @@ export class GameWebSocketServer {
       }
     }
 
-    onlineUsers.delete(client.userId);
+    if (!Array.from(this.clients.values()).some((other) => other.userId === client.userId && other.isAuthenticated)) {
+      onlineUsers.delete(client.userId);
+    }
     this.clients.delete(clientId);
     console.log(`[WebSocket] 用户断开: ${client.userId || clientId}`);
   }

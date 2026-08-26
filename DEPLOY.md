@@ -27,6 +27,7 @@ apt-get install -y nginx
 
 # 创建目录
 mkdir -p /opt/maozi-rps/server /opt/maozi-rps/web /var/log/maozi-rps
+mkdir -p /opt/maozi-rps/server/data
 ```
 
 ### 2. 部署后端
@@ -43,6 +44,8 @@ pm2 start ecosystem.config.js
 pm2 save
 pm2 startup
 ```
+
+SQLite 数据默认保存到 `/opt/maozi-rps/server/data/maozi-rps.db`。该目录不能随发布流程删除，建议定期备份数据库文件。
 
 ### 3. 部署 Web 前端
 

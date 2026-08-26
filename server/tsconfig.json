@@ -4,6 +4,7 @@
     "module": "commonjs",
     "lib": ["ES2020"],
     "outDir": "./dist",
+    "rootDir": "./src",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -12,11 +13,8 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "baseUrl": ".",
-    "paths": {
-      "@maozi/shared": ["../shared/src"],
-      "@maozi/shared/*": ["../shared/src/*"]
-    }
+    "composite": true,
+    "tsBuildInfoFile": "./dist/.tsbuildinfo",
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]

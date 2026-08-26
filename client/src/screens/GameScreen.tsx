@@ -36,7 +36,7 @@ export function GameScreen() {
   const [selectedDisplay, setSelectedDisplay] = useState<GameChoice>(GameChoice.ROCK);
   const [isMatching, setIsMatching] = useState(false);
   const [opponentNickname, setOpponentNickname] = useState<string>('');
-  const [gameResult, setGameResult] = useState<{ won: boolean } | null>(null);
+  const [gameResult, setGameResult] = useState<{ won: boolean; isDraw: boolean } | null>(null);
 
   // 定时器 refs
   const switchIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -88,7 +88,9 @@ export function GameScreen() {
   const handleGameOver = useCallback((payload: any) => {
     stopChoiceSwitching();
     setPhase(GamePhase.FINISHED);
-    setGameResult({ won: payload.playerWon });
+    setPlayerScore(payload.finalScore?.player ?? 0);
+    setOpponentScore(payload.finalScore?.opponent ?? 0);
+    setGameResult({ won: payload.playerWon, isDraw: Boolean(payload.isDraw) });
     if (payload.stats) {
       setStats(payload.stats);
     }
@@ -296,10 +298,10 @@ export function GameScreen() {
         return (
           <View style={styles.gameOverContent}>
             <Text style={styles.resultEmoji}>
-              {gameResult?.won ? '🎉' : '😢'}
+              {gameResult?.isDraw ? '🤝' : gameResult?.won ? '🎉' : '😢'}
             </Text>
             <Text style={styles.resultText}>
-              {gameResult?.won ? '你赢了！' : '你输了...'}
+              {gameResult?.isDraw ? '平局！' : gameResult?.won ? '你赢了！' : '你输了...'}
             </Text>
             <Text style={styles.finalScore}>
               {playerScore} : {opponentScore}

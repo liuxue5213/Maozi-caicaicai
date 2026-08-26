@@ -65,6 +65,7 @@ npm run android # Android 开发
 ```
 PORT=60205
 JWT_SECRET=请修改为强密钥
+DATABASE_PATH=/opt/maozi-rps/server/data/maozi-rps.db
 ```
 
 前端环境变量（`client/.env`）：
@@ -82,6 +83,8 @@ npm install
 npm run build
 npm start
 # 或 PM2: pm2 start dist/index.js --name maozi-rps-server
+
+# SQLite 数据会持久化在 DATABASE_PATH 指定的位置；部署时请保留该目录并定期备份 .db 文件。
 
 # Web 前端 (Nginx 部署)
 cd client
