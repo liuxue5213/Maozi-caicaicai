@@ -8,19 +8,33 @@ import {
   Alert,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { GameChoice, GameMode, GamePhase } from '@maozi/shared';
+import { GameChoice, GameMode, GamePhase, AiDifficulty, RoundResult } from '@maozi/shared';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useAuthStore } from '../store/authStore';
 
 interface GameParams {
   mode: GameMode;
   matchType: 'online' | 'ai';
+  difficulty?: AiDifficulty;
+}
+
+/** 从双方手势推算玩家本局胜负 */
+function judgeRound(player: GameChoice, opponent: GameChoice): RoundResult {
+  if (player === opponent) return RoundResult.DRAW;
+  const wins =
+    (player === GameChoice.ROCK && opponent === GameChoice.SCISSORS) ||
+    (player === GameChoice.SCISSORS && opponent === GameChoice.PAPER) ||
+    (player === GameChoice.PAPER && opponent === GameChoice.ROCK);
+  return wins ? RoundResult.WIN : RoundResult.LOSE;
 }
 
 export function GameScreen() {
   const navigation = useNavigation();
   const route = useRoute();
-  const { mode, matchType } = (route.params || { mode: GameMode.BEST_OF_3, matchType: 'online' }) as GameParams;
+  const { mode, matchType, difficulty } = (route.params || {
+    mode: GameMode.BEST_OF_3,
+    matchType: 'online',
+  }) as GameParams;
 
   const { user, setStats } = useAuthStore();
 
@@ -37,6 +51,7 @@ export function GameScreen() {
   const [isMatching, setIsMatching] = useState(false);
   const [opponentNickname, setOpponentNickname] = useState<string>('');
   const [gameResult, setGameResult] = useState<{ won: boolean; isDraw: boolean } | null>(null);
+  const [opponentOffline, setOpponentOffline] = useState(false);
 
   // 定时器 refs
   const switchIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -53,6 +68,8 @@ export function GameScreen() {
     setPlayerChoice(null);
     setOpponentChoice(null);
     setGameResult(null);
+    setOpponentOffline(false);
+    choiceLockedRef.current = false;
     if (payload.opponent) {
       setOpponentNickname(payload.opponent.nickname || '对手');
     }
@@ -107,6 +124,29 @@ export function GameScreen() {
     ]);
   }, [navigation]);
 
+  const handleOpponentDisconnected = useCallback(() => {
+    setOpponentOffline(true);
+  }, []);
+
+  const handleOpponentReconnected = useCallback(() => {
+    setOpponentOffline(false);
+  }, []);
+
+  /** 断线恢复：按服务器返回的对局状态重建界面 */
+  const handleReconnectSuccess = useCallback((payload: any) => {
+    setIsMatching(false);
+    setGameResult(null);
+    setRoundNumber(payload.roundNumber ?? 1);
+    setPlayerScore(payload.playerScore ?? 0);
+    setOpponentScore(payload.opponentScore ?? 0);
+    setPlayerChoice(null);
+    setOpponentChoice(null);
+    choiceLockedRef.current = false;
+    if (payload.opponent?.nickname) {
+      setOpponentNickname(payload.opponent.nickname);
+    }
+  }, []);
+
   // WebSocket 钩子
   const ws = useWebSocket({
     onGameStart: handleGameStart,
@@ -115,6 +155,9 @@ export function GameScreen() {
     onGameOver: handleGameOver,
     onMatching: handleMatching,
     onMatchTimeout: handleMatchTimeout,
+    onOpponentDisconnected: handleOpponentDisconnected,
+    onOpponentReconnected: handleOpponentReconnected,
+    onReconnectSuccess: handleReconnectSuccess,
   });
 
   // 本地倒计时定时器（修复: 减少服务器时间不同步的影响）
@@ -146,7 +189,7 @@ export function GameScreen() {
     return () => ws.disconnect();
   }, []);
 
-  // 修复: 等待认证通过后再开始匹配
+  // 修复: 等待认证通过后再开始匹配（唯一触发点，避免重复发送匹配请求）
   useEffect(() => {
     if (
       ws.isConnected &&
@@ -156,12 +199,12 @@ export function GameScreen() {
       !gameResult
     ) {
       if (matchType === 'ai') {
-        ws.startAiMatch(mode);
+        ws.startAiMatch(mode, difficulty);
       } else {
         ws.startMatching(mode);
       }
     }
-  }, [ws.isConnected, ws.isAuthenticated, isMatching, phase, gameResult, matchType, mode]);
+  }, [ws.isConnected, ws.isAuthenticated, isMatching, phase, gameResult, matchType, mode, difficulty]);
 
   // 选择切换（10秒内循环切换）
   const startChoiceSwitching = () => {
@@ -187,6 +230,21 @@ export function GameScreen() {
     stopChoiceSwitching();
     setPlayerChoice(selectedDisplay);
     ws.makeChoice(selectedDisplay);
+  };
+
+  /** 对局进行中退出将被判负，需要确认 */
+  const isGameInProgress = (phase: GamePhase) =>
+    phase === GamePhase.PREPARATION || phase === GamePhase.SELECTING || phase === GamePhase.SETTLEMENT || phase === GamePhase.BREAK;
+
+  const handleQuitPress = () => {
+    if (!isGameInProgress(phase)) {
+      navigation.goBack();
+      return;
+    }
+    Alert.alert('退出对局', '当前对局尚未结束，中途退出将被判负，确定退出吗？', [
+      { text: '继续比赛', style: 'cancel' },
+      { text: '退出并判负', style: 'destructive', onPress: () => navigation.goBack() },
+    ]);
   };
 
   // 获取选择对应的 emoji
@@ -277,12 +335,29 @@ export function GameScreen() {
           </View>
         );
 
-      case GamePhase.SETTLEMENT:
+      case GamePhase.SETTLEMENT: {
+        const result =
+          playerChoice && opponentChoice ? judgeRound(playerChoice, opponentChoice) : null;
         return (
           <View style={styles.centerContent}>
-            <Text style={styles.phaseText}>结算中...</Text>
+            <Text style={styles.roundText}>第 {roundNumber} 轮结算</Text>
+            <View style={styles.settlementRow}>
+              <View style={styles.choiceCircle}>
+                <Text style={styles.choiceEmoji}>{getChoiceEmoji(playerChoice)}</Text>
+              </View>
+              <Text style={styles.versusText}>VS</Text>
+              <View style={styles.choiceCircle}>
+                <Text style={styles.choiceEmoji}>{getChoiceEmoji(opponentChoice)}</Text>
+              </View>
+            </View>
+            {result === RoundResult.DRAW && <Text style={styles.phaseText}>平局</Text>}
+            {result === RoundResult.WIN && <Text style={[styles.phaseText, styles.winText]}>这一局你赢了！</Text>}
+            {result === RoundResult.LOSE && <Text style={[styles.phaseText, styles.loseText]}>这一局你输了</Text>}
+            {!result && <Text style={styles.phaseText}>结算中...</Text>}
+            <Text style={styles.scoreText}>{playerScore} : {opponentScore}</Text>
           </View>
         );
+      }
 
       case GamePhase.BREAK:
         return (
@@ -309,14 +384,10 @@ export function GameScreen() {
             <View style={styles.gameOverButtons}>
               <TouchableOpacity
                 style={styles.gameOverButton}
+                // 仅重置状态，由自动匹配的 useEffect 触发新一局（服务端有防重入，这里也避免双发）
                 onPress={() => {
                   setGameResult(null);
                   setPhase(GamePhase.WAITING);
-                  if (matchType === 'ai') {
-                    ws.startAiMatch(mode);
-                  } else {
-                    ws.startMatching(mode);
-                  }
                 }}
               >
                 <Text style={styles.gameOverButtonText}>再来一局</Text>
@@ -337,7 +408,7 @@ export function GameScreen() {
     <View style={styles.container}>
       {/* 顶部信息栏 */}
       <View style={styles.topBar}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity onPress={handleQuitPress}>
           <Text style={styles.backButton}>← 退出</Text>
         </TouchableOpacity>
         <Text style={styles.scoreDisplay}>
@@ -350,6 +421,13 @@ export function GameScreen() {
       <View style={styles.gameArea}>
         {renderPhase()}
       </View>
+
+      {/* 对手离线提示条 */}
+      {opponentOffline && phase !== GamePhase.FINISHED && (
+        <View style={styles.offlineBanner}>
+          <Text style={styles.offlineText}>⚠️ 对手已断线，等待重连（超时将判你获胜）</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -544,5 +622,39 @@ const styles = StyleSheet.create({
     color: '#333',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  settlementRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 24,
+    marginVertical: 8,
+  },
+  versusText: {
+    color: '#999',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  winText: {
+    color: '#4CAF50',
+  },
+  loseText: {
+    color: '#E53935',
+  },
+  offlineBanner: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 32,
+    backgroundColor: '#FFF3E0',
+    borderColor: '#FF9800',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  offlineText: {
+    color: '#E65100',
+    fontSize: 13,
+    textAlign: 'center',
   },
 });

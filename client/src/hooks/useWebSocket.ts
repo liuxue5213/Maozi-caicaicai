@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
-import { ClientMessage, ServerMessage, GameChoice, GameMode, GamePhase } from '@maozi/shared';
+import { ClientMessage, ServerMessage, GameChoice, GameMode, GamePhase, AiDifficulty } from '@maozi/shared';
 import { WS_BASE_URL } from '../api/client';
 import { useAuthStore } from '../store/authStore';
 
@@ -16,6 +16,9 @@ interface UseWebSocketOptions {
   onMatching?: (payload: any) => void;
   onMatchTimeout?: () => void;
   onOpponentDisconnected?: () => void;
+  onOpponentReconnected?: () => void;
+  /** 断线重连成功，服务器返回进行中对局的恢复状态 */
+  onReconnectSuccess?: (payload: any) => void;
   onAuthResult?: (payload: any) => void;
   onError?: (error: string) => void;
 }
@@ -72,6 +75,12 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       case ServerMessage.OPPONENT_DISCONNECTED:
         opts.onOpponentDisconnected?.();
         break;
+      case ServerMessage.OPPONENT_RECONNECTED:
+        opts.onOpponentReconnected?.();
+        break;
+      case ServerMessage.RECONNECT_SUCCESS:
+        opts.onReconnectSuccess?.(message.payload);
+        break;
       case ServerMessage.ERROR:
         opts.onError?.(message.payload?.error || '未知错误');
         break;
@@ -97,6 +106,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       const token = useAuthStore.getState().token;
       if (token) {
         ws.send(JSON.stringify({ type: ClientMessage.AUTH, payload: { token } }));
+        // 若存在因断线中断的对局，尝试恢复（服务器无对局时静默忽略）
+        ws.send(JSON.stringify({ type: ClientMessage.RECONNECT, payload: { token } }));
       }
 
       // 修复: 启动心跳（客户端发送 PING）
@@ -197,8 +208,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   }, [sendMessage]);
 
   const startAiMatch = useCallback(
-    (mode: GameMode) => {
-      sendMessage(ClientMessage.START_AI_MATCH, { mode });
+    (mode: GameMode, aiDifficulty?: AiDifficulty) => {
+      sendMessage(ClientMessage.START_AI_MATCH, { mode, aiDifficulty });
     },
     [sendMessage]
   );

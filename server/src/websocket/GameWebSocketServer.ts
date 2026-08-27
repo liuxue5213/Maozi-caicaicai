@@ -9,6 +9,7 @@ import {
   RoundResult,
   GAME_TIMINGS,
   AI_NICKNAMES,
+  AiDifficulty,
   getGameCountTitle,
   getWinStreakTitle,
 } from '@maozi/shared';
@@ -18,6 +19,35 @@ import { verifyToken } from '../utils/jwt';
 // ============================================
 // 连接与游戏状态
 // ============================================
+
+/**
+ * 测试/演示时可整体加速游戏节奏：GAME_TIME_SCALE=0.2 表示所有时长变为原来的 20%
+ */
+const TIME_SCALE = Math.min(Math.max(Number(process.env.GAME_TIME_SCALE) || 1, 0.05), 5);
+const scaled = (ms: number) => Math.max(Math.round(ms * TIME_SCALE), 300);
+const T = {
+  PREPARATION_MS: () => scaled(GAME_TIMINGS.PREPARATION_MS),
+  SELECTING_MS: () => scaled(GAME_TIMINGS.SELECTING_MS),
+  SETTLEMENT_MS: () => scaled(GAME_TIMINGS.SETTLEMENT_MS),
+  BREAK_MS: () => scaled(GAME_TIMINGS.BREAK_MS),
+  MATCH_TIMEOUT_MS: () => scaled(GAME_TIMINGS.MATCH_TIMEOUT_MS),
+  RECONNECT_TIMEOUT_MS: () => scaled(GAME_TIMINGS.RECONNECT_TIMEOUT_MS),
+};
+
+/** AI 用于记忆玩家出拳倾向的状态（一局内累计） */
+interface AiMemory {
+  counts: Record<GameChoice, number>;
+  lastPlayerChoice: GameChoice | null;
+}
+
+/** 返回能克制 choice 的手势 */
+function beatOf(choice: GameChoice): GameChoice {
+  switch (choice) {
+    case GameChoice.ROCK: return GameChoice.PAPER;
+    case GameChoice.SCISSORS: return GameChoice.ROCK;
+    default: return GameChoice.SCISSORS;
+  }
+}
 
 interface ConnectedClient {
   ws: WebSocket;
@@ -37,6 +67,8 @@ interface GameRoom {
   phase: GamePhase;
   players: { user: DbUser; ws: WebSocket; choice: GameChoice | null; score: number; connected: boolean }[];
   isAi: boolean;
+  aiDifficulty: AiDifficulty;
+  aiMemory: AiMemory;
   roundNumber: number;
   startedAt: number;
   phaseTimer: NodeJS.Timeout | null;
@@ -45,6 +77,8 @@ interface GameRoom {
 export class GameWebSocketServer {
   private clients: Map<string, ConnectedClient> = new Map();
   private games: Map<string, GameRoom> = new Map();
+  /** userId -> 进行中对局，支持断线重连找回房间 */
+  private userGames: Map<string, string> = new Map();
   private matchingQueue: ConnectedClient[] = [];
   private heartbeatInterval: NodeJS.Timeout | null = null;
 
@@ -77,8 +111,9 @@ export class GameWebSocketServer {
         }
       });
 
-      ws.on('close', () => {
-        this.handleDisconnect(clientId);
+      // code 1000 表示客户端主动正常关闭（如玩家主动退出对局）
+      ws.on('close', (code: number) => {
+        this.handleDisconnect(clientId, code);
       });
 
       ws.on('error', (error) => {
@@ -89,7 +124,8 @@ export class GameWebSocketServer {
       this.sendToClient(ws, { type: ServerMessage.AUTH_RESULT, payload: { connected: true, clientId } });
     });
 
-    // 心跳检测（使用常量配置超时时间）
+    // 心跳检测：连接层的超时阈值不随 GAME_TIME_SCALE 缩放，
+    // 否则会误杀节奏加快的对局中正常的低频心跳连接
     const heartbeatTimeout = GAME_TIMINGS.RECONNECT_TIMEOUT_MS; // 60秒无响应则断开
     this.heartbeatInterval = setInterval(() => {
       const now = Date.now();
@@ -127,8 +163,13 @@ export class GameWebSocketServer {
       case ClientMessage.MAKE_CHOICE:
         if (client.isAuthenticated) this.handleMakeChoice(clientId, payload);
         break;
+      case ClientMessage.RECONNECT:
+        // 重连不需要预先 AUTH，凭 token 自行验证
+        this.handleReconnect(clientId, payload);
+        break;
       case ClientMessage.PING:
         client.lastPing = Date.now();
+        this.sendToClient(client.ws, { type: ServerMessage.PONG, payload: {} });
         break;
       default:
         console.log(`[WebSocket] 未知消息类型: ${type}`);
@@ -190,7 +231,7 @@ export class GameWebSocketServer {
           this.handleCancelMatching(clientId);
           this.sendToClient(client.ws, { type: ServerMessage.MATCH_TIMEOUT, payload: {} });
         }
-      }, GAME_TIMINGS.MATCH_TIMEOUT_MS);
+      }, T.MATCH_TIMEOUT_MS());
     }
   }
 
@@ -219,15 +260,19 @@ export class GameWebSocketServer {
     if (idx >= 0) this.matchingQueue.splice(idx, 1);
   }
 
-  private handleStartAiMatch(clientId: string, payload: { mode: GameMode }): void {
+  private handleStartAiMatch(clientId: string, payload: { mode: GameMode; aiDifficulty?: AiDifficulty }): void {
     const client = this.clients.get(clientId);
-    if (!client) return;
+    // 关键修复: 与真人匹配一致的防重入校验，避免重复创建房间导致重复结算战绩
+    if (!client || client.isMatching || client.currentGameId) return;
 
     const mode = payload?.mode || GameMode.BEST_OF_3;
     if (!Object.values(GameMode).includes(mode)) {
       this.sendToClient(client.ws, { type: ServerMessage.ERROR, payload: { error: '无效的对局模式' } });
       return;
     }
+    const aiDifficulty: AiDifficulty =
+      payload?.aiDifficulty === 'easy' || payload?.aiDifficulty === 'hard' ? payload.aiDifficulty : 'normal';
+
     const aiNickname = AI_NICKNAMES[Math.floor(Math.random() * AI_NICKNAMES.length)];
     const aiUser: DbUser = {
       id: 'ai-' + uuidv4(),
@@ -246,7 +291,8 @@ export class GameWebSocketServer {
       client,
       { user: aiUser, ws: aiWs },
       mode,
-      true
+      true,
+      aiDifficulty
     );
   }
 
@@ -254,7 +300,8 @@ export class GameWebSocketServer {
     player1: ConnectedClient,
     player2: ConnectedClient | { user: DbUser; ws: WebSocket },
     mode: GameMode,
-    isAi: boolean
+    isAi: boolean,
+    aiDifficulty: AiDifficulty = 'normal'
   ): void {
     const gameId = uuidv4();
     const game: GameRoom = {
@@ -287,6 +334,8 @@ export class GameWebSocketServer {
         },
       ],
       isAi,
+      aiDifficulty,
+      aiMemory: { counts: { [GameChoice.ROCK]: 0, [GameChoice.SCISSORS]: 0, [GameChoice.PAPER]: 0 }, lastPlayerChoice: null },
       roundNumber: 1,
       startedAt: Date.now(),
       phaseTimer: null,
@@ -296,10 +345,12 @@ export class GameWebSocketServer {
     player1.currentGameId = gameId;
     player1.isMatching = false;
     player1.matchingMode = null;
+    this.userGames.set(player1.userId, gameId);
     if (!isAi && !('user' in player2)) {
       player2.currentGameId = gameId;
       player2.isMatching = false;
       player2.matchingMode = null;
+      this.userGames.set(player2.userId, gameId);
     }
 
     // 获取对手信息
@@ -337,19 +388,21 @@ export class GameWebSocketServer {
 
     switch (phase) {
       case GamePhase.PREPARATION:
-        duration = GAME_TIMINGS.PREPARATION_MS;
+        duration = T.PREPARATION_MS();
         this.broadcastPhaseUpdate(game, GamePhase.PREPARATION, duration);
         break;
       case GamePhase.SELECTING:
-        duration = GAME_TIMINGS.SELECTING_MS;
+        duration = T.SELECTING_MS();
         this.broadcastPhaseUpdate(game, GamePhase.SELECTING, duration);
         break;
       case GamePhase.SETTLEMENT:
-        duration = GAME_TIMINGS.SETTLEMENT_MS;
+        duration = T.SETTLEMENT_MS();
+        // 修复: 结算阶段也要广播 PHASE_UPDATE，客户端才能切换到结算视图
+        this.broadcastPhaseUpdate(game, GamePhase.SETTLEMENT, duration);
         this.processSettlement(game);
         break;
       case GamePhase.BREAK:
-        duration = GAME_TIMINGS.BREAK_MS;
+        duration = T.BREAK_MS();
         this.broadcastPhaseUpdate(game, GamePhase.BREAK, duration);
         break;
       case GamePhase.FINISHED:
@@ -360,7 +413,7 @@ export class GameWebSocketServer {
     game.phaseTimer = setTimeout(() => {
       // AI 自动出拳
       if (game.isAi && phase === GamePhase.SELECTING && !game.players[1].choice) {
-        game.players[1].choice = this.getAiChoice();
+        game.players[1].choice = this.getAiChoice(game);
       }
 
       // 超时未选择默认给石头
@@ -402,6 +455,10 @@ export class GameWebSocketServer {
   private processSettlement(game: GameRoom): void {
     const p1Choice = game.players[0].choice!;
     const p2Choice = game.players[1].choice!;
+
+    // 记录真人玩家的出拳倾向，供困难 AI 下一轮参考
+    game.aiMemory.counts[p1Choice]++;
+    game.aiMemory.lastPlayerChoice = p1Choice;
 
     let result: RoundResult;
     if (p1Choice === p2Choice) {
@@ -530,7 +587,12 @@ export class GameWebSocketServer {
     }
     this.games.delete(gameId);
 
-    // 清理所有客户端引用
+    // 清理所有客户端引用与 userId 映射
+    game?.players.forEach((p) => {
+      if (this.userGames.get(p.user.id) === gameId) {
+        this.userGames.delete(p.user.id);
+      }
+    });
     this.clients.forEach((client) => {
       if (client.currentGameId === gameId) {
         client.currentGameId = null;
@@ -540,9 +602,119 @@ export class GameWebSocketServer {
     console.log(`[Game] 房间已清理: ${gameId}`);
   }
 
-  private getAiChoice(): GameChoice {
+  /**
+   * 断线重连：凭 token 找回进行中的对局，恢复状态并通知对手。
+   * 无论是否有对局可恢复，都会完成该连接的认证（等价于 AUTH）。
+   */
+  private handleReconnect(clientId: string, payload: { token: string }): void {
+    const client = this.clients.get(clientId);
+    if (!client || !payload?.token) return;
+
+    const decoded = verifyToken(payload.token);
+    const user = decoded ? db.findUserById(decoded.userId) : null;
+    if (!user) {
+      this.sendToClient(client.ws, { type: ServerMessage.AUTH_RESULT, payload: { success: false, error: 'Token 无效' } });
+      return;
+    }
+
+    client.userId = user.id;
+    client.username = user.username;
+    client.nickname = user.nickname;
+    client.isAuthenticated = true;
+    onlineUsers.add(user.id);
+
+    const gameId = this.userGames.get(user.id);
+    const game = gameId ? this.games.get(gameId) : undefined;
+    if (!game || game.phase === GamePhase.FINISHED) {
+      // 没有可恢复的对局，仅完成认证，客户端走正常匹配流程即可
+      return;
+    }
+
+    const playerIdx = game.players.findIndex((p) => p.user.id === user.id);
+    if (playerIdx < 0) return;
+
+    const opponentIdx = playerIdx === 0 ? 1 : 0;
+    client.currentGameId = game.id;
+    game.players[playerIdx].ws = client.ws;
+    game.players[playerIdx].connected = true;
+
+    // 恢复信息（玩家自己的视角）
+    const opponentUser = game.players[opponentIdx].user;
+    this.sendToClient(client.ws, {
+      type: ServerMessage.RECONNECT_SUCCESS,
+      payload: {
+        gameId: game.id,
+        mode: game.mode,
+        isAi: game.isAi,
+        opponent: game.isAi
+          ? null
+          : { id: opponentUser.id, nickname: opponentUser.nickname, avatar: opponentUser.avatar ?? undefined },
+        roundNumber: game.roundNumber,
+        playerScore: game.players[playerIdx].score,
+        opponentScore: game.players[opponentIdx].score,
+      },
+    });
+
+    // 用当前阶段总时长重新开始本地倒计时
+    const phaseDurations: Partial<Record<GamePhase, number>> = {
+      [GamePhase.PREPARATION]: T.PREPARATION_MS(),
+      [GamePhase.SELECTING]: T.SELECTING_MS(),
+      [GamePhase.SETTLEMENT]: T.SETTLEMENT_MS(),
+      [GamePhase.BREAK]: T.BREAK_MS(),
+    };
+    const duration = phaseDurations[game.phase] ?? 0;
+    this.sendToClient(client.ws, {
+      type: ServerMessage.PHASE_UPDATE,
+      payload: {
+        phase: game.phase,
+        roundNumber: game.roundNumber,
+        timeRemaining: duration,
+        playerScore: game.players[playerIdx].score,
+        opponentScore: game.players[opponentIdx].score,
+      },
+    });
+
+    if (!game.isAi && game.players[opponentIdx].connected) {
+      this.sendToClient(game.players[opponentIdx].ws, { type: ServerMessage.OPPONENT_RECONNECTED, payload: {} });
+    }
+
+    console.log(`[WebSocket] 重连成功，已恢复对局: ${user.nickname} -> ${game.id}`);
+  }
+
+  /**
+   * 按难度出拳：
+   * - easy: 偏向跟风玩家上一局的手势，随机性强
+   * - normal: 纯随机
+   * - hard: 统计玩家本局出拳频率并针对性克制，样本不足时结合上一局克制
+   */
+  private getAiChoice(game: GameRoom): GameChoice {
     const choices = [GameChoice.ROCK, GameChoice.SCISSORS, GameChoice.PAPER];
-    return choices[Math.floor(Math.random() * 3)];
+    const randomOf = () => choices[Math.floor(Math.random() * 3)];
+    const memory = game.aiMemory;
+
+    if (game.aiDifficulty === 'normal') return randomOf();
+
+    if (game.aiDifficulty === 'easy') {
+      if (memory.lastPlayerChoice && Math.random() < 0.4) {
+        // 跟随玩家上一局的同一手势（容易被针对）
+        return memory.lastPlayerChoice;
+      }
+      return randomOf();
+    }
+
+    // hard
+    const total = memory.counts[GameChoice.ROCK] + memory.counts[GameChoice.SCISSORS] + memory.counts[GameChoice.PAPER];
+    if (total >= 2 && Math.random() < 0.7) {
+      let favorite: GameChoice = GameChoice.ROCK;
+      for (const c of choices) {
+        if (memory.counts[c] > memory.counts[favorite]) favorite = c;
+      }
+      return beatOf(favorite);
+    }
+    if (memory.lastPlayerChoice && Math.random() < 0.5) {
+      return beatOf(memory.lastPlayerChoice);
+    }
+    return randomOf();
   }
 
   /**
@@ -570,6 +742,11 @@ export class GameWebSocketServer {
 
     game.players[playerIdx].choice = payload.choice;
 
+    // AI 对局: 玩家出拳后 AI 立即跟拳，无需干等倒计时
+    if (game.isAi && !game.players[1].choice) {
+      game.players[1].choice = this.getAiChoice(game);
+    }
+
     // 双方都已选择，立即进入结算
     if (game.players[0].choice && game.players[1].choice) {
       if (game.phaseTimer) clearTimeout(game.phaseTimer);
@@ -578,7 +755,7 @@ export class GameWebSocketServer {
     }
   }
 
-  private handleDisconnect(clientId: string): void {
+  private handleDisconnect(clientId: string, closeCode?: number): void {
     const client = this.clients.get(clientId);
     if (!client) return;
 
@@ -590,25 +767,24 @@ export class GameWebSocketServer {
     if (client.currentGameId) {
       const game = this.games.get(client.currentGameId);
       if (game) {
-        const player = game.players.find((p) => p.user.id === client.userId);
-        if (player) {
+        const playerIdx = game.players.findIndex((p) => p.user.id === client.userId);
+        const player = playerIdx >= 0 ? game.players[playerIdx] : null;
+        if (player && game.phase !== GamePhase.FINISHED) {
           player.connected = false;
-          const opponent = game.players.find((p) => p.user.id !== client.userId);
-          if (opponent && !game.isAi) {
-            opponent.ws.send(JSON.stringify({ type: ServerMessage.OPPONENT_DISCONNECTED, payload: {} }));
+          const opponentIdx = playerIdx === 0 ? 1 : 0;
+          if (!game.isAi) {
+            this.sendToClient(game.players[opponentIdx].ws, { type: ServerMessage.OPPONENT_DISCONNECTED, payload: {} });
           }
 
-          // 重连超时
+          // 玩家主动正常关闭连接（code 1000）：视为弃局，立即判负；
+          // 异常掉线则保留重连窗口，窗口内重连成功则自动回到对局。
+          const delay = closeCode === 1000 ? 0 : T.RECONNECT_TIMEOUT_MS();
           setTimeout(() => {
-            if (!player.connected && this.games.has(game.id)) {
-              if (game.phaseTimer) clearTimeout(game.phaseTimer);
-              // 超时判负
-              const opponent = game.players.find((p) => p.user.id !== client.userId);
-              if (opponent) opponent.score = Math.floor(game.mode / 2) + 1;
-              game.phase = GamePhase.FINISHED;
-              this.runGamePhase(game.id);
+            if (!player.connected && this.games.has(game.id) && game.phase !== GamePhase.FINISHED) {
+              // 失踪者是输家（playerIdx），给其对手记分
+              this.forfeitGame(game, playerIdx);
             }
-          }, GAME_TIMINGS.RECONNECT_TIMEOUT_MS);
+          }, delay);
         }
       }
     }
@@ -617,7 +793,15 @@ export class GameWebSocketServer {
       onlineUsers.delete(client.userId);
     }
     this.clients.delete(clientId);
-    console.log(`[WebSocket] 用户断开: ${client.userId || clientId}`);
+    console.log(`[WebSocket] 用户断开: ${client.userId || clientId} (code: ${closeCode ?? 'unknown'})`);
+  }
+
+  /** 将局内一方直接判负并结束对局 */
+  private forfeitGame(game: GameRoom, loserIdx: number): void {
+    if (game.phaseTimer) clearTimeout(game.phaseTimer);
+    game.players[loserIdx === 0 ? 1 : 0].score = Math.floor(game.mode / 2) + 1;
+    game.phase = GamePhase.FINISHED;
+    this.runGamePhase(game.id);
   }
 
   // ---- 工具方法 ----

@@ -42,6 +42,16 @@ export enum GamePhase {
   FINISHED = 'FINISHED',       // 对局结束
 }
 
+// ---- AI 难度 ----
+
+export type AiDifficulty = 'easy' | 'normal' | 'hard';
+
+export const AI_DIFFICULTY_LABELS: Record<AiDifficulty, string> = {
+  easy: '简单',
+  normal: '普通',
+  hard: '困难',
+};
+
 // ---- 用户相关 ----
 
 export interface User {
@@ -114,6 +124,8 @@ export enum ServerMessage {
   // 对手状态
   OPPONENT_DISCONNECTED = 'OPPONENT_DISCONNECTED',
   OPPONENT_RECONNECTED = 'OPPONENT_RECONNECTED',
+  // 重连恢复成功（服务器 -> 断线重连的玩家）
+  RECONNECT_SUCCESS = 'RECONNECT_SUCCESS',
   // 心跳
   PONG = 'PONG',
   // 错误
@@ -132,7 +144,7 @@ export interface StartMatchingPayload {
 
 export interface StartAiMatchPayload {
   mode: GameMode;
-  aiDifficulty?: 'easy' | 'normal' | 'hard';
+  aiDifficulty?: AiDifficulty;
 }
 
 export interface MakeChoicePayload {
@@ -185,6 +197,16 @@ export interface GameOverPayload {
     gameCountTitle: TitleInfo;
     winStreakTitle: TitleInfo | null;
   };
+}
+
+export interface ReconnectSuccessPayload {
+  gameId: string;
+  mode: GameMode;
+  isAi: boolean;
+  opponent: { id: string; nickname: string; avatar?: string } | null;
+  roundNumber: number;
+  playerScore: number;
+  opponentScore: number;
 }
 
 // ---- 游戏房间状态 ----

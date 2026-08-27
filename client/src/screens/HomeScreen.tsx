@@ -6,7 +6,7 @@ import {
   StyleSheet,
   ScrollView,
 } from 'react-native';
-import { GameMode, GAME_MODE_LABELS } from '@maozi/shared';
+import { GameMode, GAME_MODE_LABELS, AI_DIFFICULTY_LABELS, AiDifficulty } from '@maozi/shared';
 import { useAuthStore } from '../store/authStore';
 import { useNavigation } from '@react-navigation/native';
 import { api } from '../api/client';
@@ -19,6 +19,7 @@ export function HomeScreen({ navigation }: HomeScreenProps) {
   const nav = useNavigation();
   const { user, stats } = useAuthStore();
   const [onlineCount, setOnlineCount] = useState(0);
+  const [difficulty, setDifficulty] = useState<AiDifficulty>('normal');
 
   useEffect(() => {
     fetchOnlineCount();
@@ -40,7 +41,7 @@ export function HomeScreen({ navigation }: HomeScreenProps) {
   };
 
   const handleStartAiGame = (mode: GameMode) => {
-    (nav as any).navigate('Game', { mode, matchType: 'ai' });
+    (nav as any).navigate('Game', { mode, matchType: 'ai', difficulty });
   };
 
   return (
@@ -98,6 +99,24 @@ export function HomeScreen({ navigation }: HomeScreenProps) {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>🤖 人机对战</Text>
         <Text style={styles.sectionDesc}>与 AI 练习技巧</Text>
+        <View style={styles.difficultyRow}>
+          {(Object.keys(AI_DIFFICULTY_LABELS) as AiDifficulty[]).map((d) => (
+            <TouchableOpacity
+              key={d}
+              style={[styles.difficultyButton, difficulty === d && styles.difficultyButtonActive]}
+              onPress={() => setDifficulty(d)}
+            >
+              <Text
+                style={[
+                  styles.difficultyButtonText,
+                  difficulty === d && styles.difficultyButtonTextActive,
+                ]}
+              >
+                {AI_DIFFICULTY_LABELS[d]}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
         <View style={styles.modeGrid}>
           {[GameMode.BEST_OF_3, GameMode.BEST_OF_5].map((mode) => (
             <TouchableOpacity
@@ -186,6 +205,32 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
+  },
+  difficultyRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  difficultyButton: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    alignItems: 'center',
+  },
+  difficultyButtonActive: {
+    backgroundColor: '#03DAC6',
+    borderColor: '#03DAC6',
+  },
+  difficultyButtonText: {
+    color: '#666',
+    fontSize: 14,
+  },
+  difficultyButtonTextActive: {
+    color: '#fff',
+    fontWeight: 'bold',
   },
   modeButtonOnline: {
     backgroundColor: '#6200EE',

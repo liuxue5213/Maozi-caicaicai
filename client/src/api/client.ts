@@ -57,11 +57,15 @@ export async function apiRequest<T>(endpoint: string, options: RequestOptions = 
   const data = await response.json();
 
   if (!response.ok) {
-    throw new Error(data.error || `请求失败: ${response.status}`);
+    const err = new Error(data.error || `请求失败: ${response.status}`) as Error & { status?: number };
+    err.status = response.status;
+    throw err;
   }
 
   if (!data.success) {
-    throw new Error(data.error || '请求失败');
+    const err = new Error(data.error || '请求失败') as Error & { status?: number };
+    err.status = response.status;
+    throw err;
   }
 
   return data.data as T;

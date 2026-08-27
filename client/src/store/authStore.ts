@@ -12,6 +12,8 @@ interface AuthState {
   // Actions
   setAuth: (user: User, token: string, stats: UserStats) => void;
   setStats: (stats: UserStats) => void;
+  /** 仅刷新用户信息与战绩（保留 token），用于启动时向服务器校验后同步 */
+  setUserAndStats: (user: User, stats: UserStats) => void;
   updateNickname: (nickname: string) => void;
   logout: () => void;
   initialize: () => Promise<void>;
@@ -50,6 +52,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       console.error('[AuthStore] 保存统计失败:', error);
     }
     set({ stats });
+  },
+
+  setUserAndStats: async (user, stats) => {
+    try {
+      await AsyncStorage.multiSet([
+        [USER_KEY, JSON.stringify(user)],
+        [STATS_KEY, JSON.stringify(stats)],
+      ]);
+    } catch (error) {
+      console.error('[AuthStore] 刷新用户信息失败:', error);
+    }
+    set({ user, stats });
   },
 
   updateNickname: (nickname) => {

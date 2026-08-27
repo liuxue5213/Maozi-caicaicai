@@ -16,7 +16,8 @@ maozi-rps/
 
 - ✅ 账号注册/登录系统 (JWT)
 - ⚡ 联网真人实时匹配对战
-- 🤖 AI 人机对战
+- 🤖 AI 人机对战（简单/普通/困难三档难度）
+- 🔁 断线重连：异常掉线后自动恢复进行中的对局（60 秒内），对手断线有界面提示
 - 🏆 排行榜（胜场榜/连胜榜）
 - 🎖️ 称号系统（每200场一个新称号）
 - 🌐 Web + App 跨平台数据互通
@@ -66,12 +67,25 @@ npm run android # Android 开发
 PORT=60205
 JWT_SECRET=请修改为强密钥
 DATABASE_PATH=/opt/maozi-rps/server/data/maozi-rps.db
+# 可选：整体加速游戏节奏（0.05-5，仅用于本地调试/自动化测试，生产勿设）
+GAME_TIME_SCALE=1
 ```
 
 前端环境变量（`client/.env`）：
 ```
 EXPO_PUBLIC_API_URL=http://你的服务器IP:60205/api
 EXPO_PUBLIC_WS_URL=ws://你的服务器IP:60205/ws
+```
+
+### 冒烟测试
+
+模拟双客户端完整验证联机协议（匹配、AI、重连、判负）：
+
+```bash
+cd shared && npm run build && cd ../server && npm run build
+
+GAME_TIME_SCALE=0.15 PORT=61999 DATABASE_PATH=/tmp/smoke.db JWT_SECRET=test node dist/index.js &
+node scripts/smoke-test.mjs ws://localhost:61999/ws http://localhost:61999/api
 ```
 
 ## 服务器部署

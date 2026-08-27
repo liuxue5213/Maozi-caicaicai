@@ -9,6 +9,7 @@ import { MainTabNavigator } from './src/navigation/MainTabNavigator';
 import { GameScreen } from './src/screens/GameScreen';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { View, StyleSheet } from 'react-native';
+import { api } from './src/api/client';
 
 const Stack = createNativeStackNavigator();
 
@@ -16,7 +17,29 @@ export default function App() {
   const { isAuthenticated, initialize } = useAuthStore();
 
   useEffect(() => {
-    initialize();
+    const init = async () => {
+      await initialize();
+      const { token, logout, setUserAndStats } = useAuthStore.getState();
+      if (!token) return;
+
+      // 缓存的登录态需要向服务器校验：token 过期则自动登出，
+      // 有效则顺手刷新用户信息与战绩；网络不通时保持现状不打断使用。
+      try {
+        const data = (await api.verifyToken()) as any;
+        if (data?.user && data?.stats) {
+          setUserAndStats(
+            { ...data.user, avatar: data.user.avatar ?? undefined },
+            data.stats
+          );
+        }
+      } catch (err: any) {
+        if (err?.status === 401) {
+          console.warn('[App] 登录已过期，自动登出');
+          await logout();
+        }
+      }
+    };
+    init();
   }, []);
 
   return (
