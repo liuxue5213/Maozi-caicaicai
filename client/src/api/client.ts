@@ -104,12 +104,45 @@ export const api = {
       body: { nickname },
     }),
 
-  getHistory: (limit?: number) =>
-    apiRequest(`/user/history${limit ? `?limit=${limit}` : ''}`),
-
   // 排行榜
-  getLeaderboard: (type: 'wins' | 'streak' = 'wins', limit = 100) =>
+  getLeaderboard: (type: 'wins' | 'streak' | 'rank' = 'wins', limit = 100) =>
     apiRequest(`/leaderboard?type=${type}&limit=${limit}`),
+
+  // 我在指定榜单中的名次（可能不在榜单前列）
+  getMyRank: (type: 'wins' | 'streak' | 'rank' = 'wins') =>
+    apiRequest<{
+      type: 'wins' | 'streak' | 'rank';
+      position: number;
+      totalPlayers: number;
+      stats: {
+        userId: string;
+        totalGames: number;
+        wins: number;
+        losses: number;
+        draws: number;
+        currentWinStreak: number;
+        bestWinStreak: number;
+        rank: number;
+      };
+    }>(`/leaderboard/me?type=${type}`),
+
+  // 对局历史（按玩家视角：对手、比分、胜负）
+  getHistory: (limit = 20) =>
+    apiRequest<
+      Array<{
+        id: string;
+        timestamp: number;
+        mode: number;
+        isAi: boolean;
+        opponentNickname: string;
+        myScore: number;
+        opponentScore: number;
+        isDraw: boolean;
+        won: boolean;
+        roundsCount: number;
+        durationMs: number;
+      }>
+    >(`/user/history?limit=${limit}`),
 
   getOnlineCount: () => apiRequest<{ count: number }>('/leaderboard/online-count'),
 };

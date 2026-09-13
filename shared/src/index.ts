@@ -80,6 +80,16 @@ export interface LeaderboardEntry {
   title: TitleInfo;
 }
 
+/** 当前用户在指定榜单中的名次信息（可能不在榜单前列） */
+export interface MyRankInfo {
+  type: 'wins' | 'streak' | 'rank';
+  /** 1 起始名次；从未打过对局时为 0 */
+  position: number;
+  /** 榜上有战绩的玩家总数 */
+  totalPlayers: number;
+  stats: UserStats;
+}
+
 // ---- 称号系统 ----
 
 export interface TitleInfo {
@@ -102,6 +112,9 @@ export enum ClientMessage {
   MAKE_CHOICE = 'MAKE_CHOICE',
   // 人机匹配
   START_AI_MATCH = 'START_AI_MATCH',
+  // 私密房间（邀请码对战）
+  CREATE_PRIVATE_ROOM = 'CREATE_PRIVATE_ROOM',
+  JOIN_PRIVATE_ROOM = 'JOIN_PRIVATE_ROOM',
   // 心跳
   PING = 'PING',
   // 重连
@@ -114,7 +127,6 @@ export enum ServerMessage {
   AUTH_RESULT = 'AUTH_RESULT',
   // 匹配状态
   MATCHING = 'MATCHING',
-  MATCH_FOUND = 'MATCH_FOUND',
   MATCH_TIMEOUT = 'MATCH_TIMEOUT',
   // 游戏状态
   GAME_START = 'GAME_START',
@@ -126,6 +138,10 @@ export enum ServerMessage {
   OPPONENT_RECONNECTED = 'OPPONENT_RECONNECTED',
   // 重连恢复成功（服务器 -> 断线重连的玩家）
   RECONNECT_SUCCESS = 'RECONNECT_SUCCESS',
+  // 私密房间已创建（服务器 -> 房主）
+  PRIVATE_ROOM_CREATED = 'PRIVATE_ROOM_CREATED',
+  // 好友加入私密房间，对局即将开始（服务器 -> 房主）
+  PRIVATE_ROOM_JOINED = 'PRIVATE_ROOM_JOINED',
   // 心跳
   PONG = 'PONG',
   // 错误
@@ -145,6 +161,19 @@ export interface StartMatchingPayload {
 export interface StartAiMatchPayload {
   mode: GameMode;
   aiDifficulty?: AiDifficulty;
+}
+
+export interface CreatePrivateRoomPayload {
+  mode: GameMode;
+}
+
+export interface JoinPrivateRoomPayload {
+  code: string;
+}
+
+export interface PrivateRoomCreatedPayload {
+  code: string;
+  mode: GameMode;
 }
 
 export interface MakeChoicePayload {
@@ -168,6 +197,8 @@ export interface PhaseUpdatePayload {
   timeRemaining: number; // 毫秒
   playerScore: number;
   opponentScore: number;
+  /** 连续 3 轮平局后进入突然死亡：下一个非平局回合直接决定胜负 */
+  suddenDeath?: boolean;
 }
 
 export interface RoundResultPayload {
@@ -207,6 +238,7 @@ export interface ReconnectSuccessPayload {
   roundNumber: number;
   playerScore: number;
   opponentScore: number;
+  suddenDeath?: boolean;
 }
 
 // ---- 游戏房间状态 ----
@@ -336,4 +368,33 @@ export function getWinStreakTitle(streak: number): TitleInfo | null {
     }
   }
   return null;
+}
+
+// ---- 段位系统（按 rank 分映射，前后端共享） ----
+
+export interface RankTier {
+  name: string;
+  emoji: string;
+  color: string;
+  /** 达到该段位所需的最低 rank 分 */
+  minRank: number;
+}
+
+// rank 起始 1000，胜 +15~35、负 -10、平 +3
+export const RANK_TIERS: RankTier[] = [
+  { name: '青铜', emoji: '🥉', color: '#CD7F32', minRank: 0 },
+  { name: '白银', emoji: '🥈', color: '#9E9E9E', minRank: 1100 },
+  { name: '黄金', emoji: '🥇', color: '#FFB300', minRank: 1250 },
+  { name: '铂金', emoji: '💎', color: '#00BCD4', minRank: 1400 },
+  { name: '钻石', emoji: '💠', color: '#3F51B5', minRank: 1550 },
+  { name: '大师', emoji: '👑', color: '#9C27B0', minRank: 1700 },
+  { name: '王者', emoji: '🔥', color: '#F44336', minRank: 1900 },
+];
+
+export function getRankTier(rank: number): RankTier {
+  let tier = RANK_TIERS[0];
+  for (const t of RANK_TIERS) {
+    if (rank >= t.minRank) tier = t;
+  }
+  return tier;
 }

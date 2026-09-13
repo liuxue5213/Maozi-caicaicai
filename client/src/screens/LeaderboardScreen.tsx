@@ -8,6 +8,8 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { getRankTier, MyRankInfo } from '@maozi/shared';
 import { api } from '../api/client';
 
 interface LeaderboardEntry {
@@ -28,10 +30,12 @@ interface LeaderboardEntry {
 }
 
 export function LeaderboardScreen() {
-  const [type, setType] = useState<'wins' | 'streak'>('wins');
+  const insets = useSafeAreaInsets();
+  const [type, setType] = useState<'wins' | 'streak' | 'rank'>('wins');
   const [data, setData] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [myRank, setMyRank] = useState<MyRankInfo | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -45,14 +49,44 @@ export function LeaderboardScreen() {
     }
   }, [type]);
 
+  const fetchMyRank = useCallback(async () => {
+    try {
+      const result = await api.getMyRank(type);
+      setMyRank(result);
+    } catch {
+      // 未登录或接口失败时不显示我的名次栏
+      setMyRank(null);
+    }
+  }, [type]);
+
   useEffect(() => {
     setLoading(true);
     fetchData();
-  }, [type, fetchData]);
+    fetchMyRank();
+  }, [type, fetchData, fetchMyRank]);
 
   const onRefresh = () => {
     setRefreshing(true);
     fetchData();
+    fetchMyRank();
+  };
+
+  /** 榜单项右侧的数值展示（榜单与“我的名次”栏共用） */
+  const renderStat = (stats: LeaderboardEntry['stats']) => {
+    if (type === 'wins') {
+      return <Text style={styles.statValue}>{stats.wins}胜</Text>;
+    }
+    if (type === 'streak') {
+      return <Text style={styles.statValue}>{stats.bestWinStreak}连胜</Text>;
+    }
+    return (
+      <View style={styles.rankStat}>
+        <Text style={[styles.tierText, { color: getRankTier(stats.rank).color }]}>
+          {getRankTier(stats.rank).emoji} {getRankTier(stats.rank).name}
+        </Text>
+        <Text style={styles.rankScore}>{stats.rank}分</Text>
+      </View>
+    );
   };
 
   const renderItem = ({ item }: { item: LeaderboardEntry }) => {
@@ -77,13 +111,7 @@ export function LeaderboardScreen() {
             {' · '}场次: {item.stats.totalGames}
           </Text>
         </View>
-        <View style={styles.statContainer}>
-          {type === 'wins' ? (
-            <Text style={styles.statValue}>{item.stats.wins}胜</Text>
-          ) : (
-            <Text style={styles.statValue}>{item.stats.bestWinStreak}连胜</Text>
-          )}
-        </View>
+        <View style={styles.statContainer}>{renderStat(item.stats)}</View>
       </View>
     );
   };
@@ -91,7 +119,7 @@ export function LeaderboardScreen() {
   return (
     <View style={styles.container}>
       {/* 类型切换 */}
-      <View style={styles.tabContainer}>
+      <View style={[styles.tabContainer, { paddingTop: insets.top + 16 }]}>
         <TouchableOpacity
           style={[styles.tab, type === 'wins' && styles.tabActive]}
           onPress={() => setType('wins')}
@@ -108,6 +136,14 @@ export function LeaderboardScreen() {
             连胜榜
           </Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, type === 'rank' && styles.tabActive]}
+          onPress={() => setType('rank')}
+        >
+          <Text style={[styles.tabText, type === 'rank' && styles.tabTextActive]}>
+            段位榜
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {/* 列表 */}
@@ -116,15 +152,39 @@ export function LeaderboardScreen() {
           <ActivityIndicator size="large" color="#6200EE" />
         </View>
       ) : (
-        <FlatList
-          data={data}
-          renderItem={renderItem}
-          keyExtractor={(item) => item.user.id}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-          }
-          contentContainerStyle={styles.listContent}
-        />
+        <View style={styles.listWrapper}>
+          <FlatList
+            data={data}
+            renderItem={renderItem}
+            keyExtractor={(item) => item.user.id}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            }
+            contentContainerStyle={styles.listContent}
+          />
+
+          {/* 我的名次：排在榜单之外也能看到自己 */}
+          {myRank && (
+            <View style={[styles.myRankBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+              {myRank.position > 0 ? (
+                <>
+                  <View style={styles.rankContainer}>
+                    <Text style={styles.rankText}>{myRank.position}</Text>
+                  </View>
+                  <View style={styles.userInfo}>
+                    <Text style={styles.nickname}>我的名次</Text>
+                    <Text style={styles.detailText}>
+                      共 {myRank.totalPlayers} 名玩家上榜
+                    </Text>
+                  </View>
+                  <View style={styles.statContainer}>{renderStat(myRank.stats)}</View>
+                </>
+              ) : (
+                <Text style={styles.myRankEmpty}>还没有战绩，打一局就能上榜啦 🎮</Text>
+              )}
+            </View>
+          )}
+        </View>
       )}
     </View>
   );
@@ -138,7 +198,7 @@ const styles = StyleSheet.create({
   tabContainer: {
     flexDirection: 'row',
     padding: 16,
-    paddingTop: 60,
+    paddingTop: 60, // 运行时由 insets.top 覆盖
     gap: 12,
   },
   tab: {
@@ -167,8 +227,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  listWrapper: {
+    flex: 1,
+  },
   listContent: {
     padding: 16,
+  },
+  myRankBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3E8FF',
+    borderTopWidth: 1,
+    borderTopColor: '#6200EE',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  myRankEmpty: {
+    flex: 1,
+    color: '#6200EE',
+    fontSize: 14,
+    textAlign: 'center',
   },
   item: {
     flexDirection: 'row',
@@ -217,6 +295,18 @@ const styles = StyleSheet.create({
   },
   statContainer: {
     alignItems: 'flex-end',
+  },
+  rankStat: {
+    alignItems: 'flex-end',
+  },
+  tierText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  rankScore: {
+    color: '#999',
+    fontSize: 12,
+    marginTop: 2,
   },
   statValue: {
     color: '#4CAF50',

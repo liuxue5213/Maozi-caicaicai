@@ -5,8 +5,12 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
+  Modal,
+  TextInput,
+  Alert,
 } from 'react-native';
-import { GameMode, GAME_MODE_LABELS, AI_DIFFICULTY_LABELS, AiDifficulty } from '@maozi/shared';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { GameMode, GAME_MODE_LABELS, AI_DIFFICULTY_LABELS, AiDifficulty, getRankTier } from '@maozi/shared';
 import { useAuthStore } from '../store/authStore';
 import { useNavigation } from '@react-navigation/native';
 import { api } from '../api/client';
@@ -17,9 +21,13 @@ interface HomeScreenProps {
 
 export function HomeScreen({ navigation }: HomeScreenProps) {
   const nav = useNavigation();
+  const insets = useSafeAreaInsets();
   const { user, stats } = useAuthStore();
   const [onlineCount, setOnlineCount] = useState(0);
   const [difficulty, setDifficulty] = useState<AiDifficulty>('normal');
+  // 私密房间弹窗：'create' 选择模式建房 / 'join' 输入邀请码进房
+  const [privateModal, setPrivateModal] = useState<'create' | 'join' | null>(null);
+  const [joinCode, setJoinCode] = useState('');
 
   useEffect(() => {
     fetchOnlineCount();
@@ -44,16 +52,39 @@ export function HomeScreen({ navigation }: HomeScreenProps) {
     (nav as any).navigate('Game', { mode, matchType: 'ai', difficulty });
   };
 
+  const handleCreatePrivateRoom = (mode: GameMode) => {
+    setPrivateModal(null);
+    (nav as any).navigate('Game', { mode, matchType: 'private', privateAction: 'create' });
+  };
+
+  const handleJoinPrivateRoom = () => {
+    const code = joinCode.trim().toUpperCase();
+    if (code.length < 3) {
+      Alert.alert('提示', '请输入正确的邀请码');
+      return;
+    }
+    setPrivateModal(null);
+    setJoinCode('');
+    (nav as any).navigate('Game', { mode: GameMode.BEST_OF_3, matchType: 'private', privateAction: 'join', roomCode: code });
+  };
+
   return (
     <ScrollView style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 20 }]}>
         <Text style={styles.welcome}>你好，{user?.nickname || '玩家'} 👋</Text>
         <Text style={styles.onlineCount}>在线人数: {onlineCount}</Text>
       </View>
 
       {/* 玩家信息卡片 */}
       <View style={styles.statsCard}>
-        <Text style={styles.cardTitle}>我的战绩</Text>
+        <View style={styles.cardTitleRow}>
+          <Text style={styles.cardTitle}>我的战绩</Text>
+          {stats && (
+            <Text style={[styles.tierBadge, { color: getRankTier(stats.rank).color }]}>
+              {getRankTier(stats.rank).emoji} {getRankTier(stats.rank).name} · {stats.rank}分
+            </Text>
+          )}
+        </View>
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
             <Text style={styles.statValue}>{stats?.totalGames || 0}</Text>
@@ -129,6 +160,78 @@ export function HomeScreen({ navigation }: HomeScreenProps) {
           ))}
         </View>
       </View>
+
+      {/* 私密房间（邀请码对战） */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>🔒 私密房间</Text>
+        <Text style={styles.sectionDesc}>创建房间把邀请码发给好友，1 对 1 私下对决</Text>
+        <View style={styles.modeGrid}>
+          <TouchableOpacity
+            style={styles.modeButtonPrivate}
+            onPress={() => setPrivateModal('create')}
+          >
+            <Text style={styles.modeButtonText}>创建房间</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.modeButtonPrivateSecondary}
+            onPress={() => setPrivateModal('join')}
+          >
+            <Text style={styles.modeButtonPrivateSecondaryText}>输入邀请码加入</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* 私密房间弹窗 */}
+      <Modal
+        visible={privateModal !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPrivateModal(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            {privateModal === 'create' ? (
+              <>
+                <Text style={styles.modalTitle}>选择对局模式</Text>
+                <Text style={styles.modalDesc}>创建后把邀请码发给好友即可开局</Text>
+                <View style={styles.modalModeGrid}>
+                  {Object.entries(GAME_MODE_LABELS).map(([mode, label]) => (
+                    <TouchableOpacity
+                      key={mode}
+                      style={styles.modalModeButton}
+                      onPress={() => handleCreatePrivateRoom(Number(mode) as GameMode)}
+                    >
+                      <Text style={styles.modalModeButtonText}>{label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </>
+            ) : (
+              <>
+                <Text style={styles.modalTitle}>输入邀请码</Text>
+                <Text style={styles.modalDesc}>向房主要一个 4 位邀请码</Text>
+                <TextInput
+                  style={styles.codeInput}
+                  value={joinCode}
+                  onChangeText={(text) => setJoinCode(text.toUpperCase())}
+                  placeholder="如：A7XK"
+                  placeholderTextColor="#bbb"
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  maxLength={4}
+                  autoFocus
+                />
+                <TouchableOpacity style={styles.modeButtonPrivate} onPress={handleJoinPrivateRoom}>
+                  <Text style={styles.modeButtonText}>加入房间</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            <TouchableOpacity style={styles.modalCancel} onPress={() => setPrivateModal(null)}>
+              <Text style={styles.modalCancelText}>取消</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -140,7 +243,7 @@ const styles = StyleSheet.create({
   },
   header: {
     padding: 20,
-    paddingTop: 60,
+    paddingTop: 60, // 运行时由 insets.top 覆盖
   },
   welcome: {
     fontSize: 24,
@@ -168,7 +271,16 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 16,
     color: '#666',
+  },
+  cardTitleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 16,
+  },
+  tierBadge: {
+    fontSize: 13,
+    fontWeight: 'bold',
   },
   statsRow: {
     flexDirection: 'row',
@@ -252,5 +364,98 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  modeButtonPrivate: {
+    backgroundColor: '#FF7043',
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    minWidth: '47%',
+    alignItems: 'center',
+  },
+  modeButtonPrivateSecondary: {
+    backgroundColor: '#fff',
+    borderWidth: 2,
+    borderColor: '#FF7043',
+    borderRadius: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    minWidth: '47%',
+    alignItems: 'center',
+  },
+  modeButtonPrivateSecondaryText: {
+    color: '#FF7043',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 24,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+    textAlign: 'center',
+  },
+  modalDesc: {
+    fontSize: 13,
+    color: '#999',
+    textAlign: 'center',
+    marginTop: 6,
+    marginBottom: 16,
+  },
+  modalModeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  modalModeButton: {
+    backgroundColor: '#F3E8FF',
+    borderWidth: 2,
+    borderColor: '#6200EE',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    minWidth: '47%',
+    alignItems: 'center',
+    flexGrow: 1,
+  },
+  modalModeButtonText: {
+    color: '#6200EE',
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  codeInput: {
+    borderWidth: 2,
+    borderColor: '#6200EE',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    fontSize: 24,
+    fontWeight: 'bold',
+    letterSpacing: 8,
+    textAlign: 'center',
+    color: '#333',
+    marginBottom: 16,
+  },
+  modalCancel: {
+    marginTop: 16,
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  modalCancelText: {
+    color: '#999',
+    fontSize: 15,
   },
 });

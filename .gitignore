@@ -54,3 +54,9 @@ android/app/build/
 
 # Misc
 *.tsbuildinfo
+
+# Shared package compiled outputs (build via `npm run build` in shared/)
+shared/src/index.js
+shared/src/index.js.map
+shared/src/index.d.ts
+shared/src/index.d.ts.map

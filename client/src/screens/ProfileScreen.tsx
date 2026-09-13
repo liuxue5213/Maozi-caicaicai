@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,16 +6,55 @@ import {
   StyleSheet,
   ScrollView,
   TextInput,
+  Switch,
   Alert,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { GAME_MODE_LABELS, getRankTier } from '@maozi/shared';
 import { useAuthStore } from '../store/authStore';
 import { api } from '../api/client';
 import { getGameCountTitle, getWinStreakTitle } from '../utils/titles';
+import { isSoundMuted, setSoundMuted } from '../utils/sounds';
+
+interface HistoryItem {
+  id: string;
+  timestamp: number;
+  mode: number;
+  isAi: boolean;
+  opponentNickname: string;
+  myScore: number;
+  opponentScore: number;
+  isDraw: boolean;
+  won: boolean;
+}
+
+function formatTime(ts: number): string {
+  const d = new Date(ts);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 export function ProfileScreen() {
   const { user, stats, logout, updateNickname } = useAuthStore();
   const [editingNickname, setEditingNickname] = useState(false);
   const [newNickname, setNewNickname] = useState(user?.nickname || '');
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [soundOn, setSoundOn] = useState(!isSoundMuted());
+
+  // 每次切到"我的"页时刷新历史
+  useFocusEffect(
+    useCallback(() => {
+      api
+        .getHistory(20)
+        .then(setHistory)
+        .catch(() => {});
+    }, [])
+  );
+
+  const handleToggleSound = async (value: boolean) => {
+    setSoundOn(value);
+    await setSoundMuted(!value);
+  };
 
   const handleSaveNickname = async () => {
     if (!newNickname.trim()) return;
@@ -127,8 +166,81 @@ export function ProfileScreen() {
 
       {/* 段位 */}
       <View style={styles.rankCard}>
-        <Text style={styles.sectionTitle}>段位分</Text>
-        <Text style={styles.rankScore}>{stats?.rank || 1000}</Text>
+        <Text style={styles.sectionTitle}>我的段位</Text>
+        {stats && (
+          <>
+            <Text style={[styles.tierEmoji, { color: getRankTier(stats.rank).color }]}>
+              {getRankTier(stats.rank).emoji}
+            </Text>
+            <Text style={[styles.tierName, { color: getRankTier(stats.rank).color }]}>
+              {getRankTier(stats.rank).name}
+            </Text>
+            <Text style={styles.rankScore}>{stats.rank} 分</Text>
+          </>
+        )}
+      </View>
+
+      {/* 最近对局 */}
+      <View style={styles.historyCard}>
+        <Text style={styles.sectionTitle}>最近对局</Text>
+        {history.length === 0 ? (
+          <Text style={styles.historyEmpty}>还没有对局记录，快去打一局吧！</Text>
+        ) : (
+          history.map((item) => (
+            <View key={item.id} style={styles.historyItem}>
+              <View
+                style={[
+                  styles.resultBadge,
+                  {
+                    backgroundColor: item.isDraw
+                      ? '#FFF3E0'
+                      : item.won
+                        ? '#E8F5E9'
+                        : '#FFEBEE',
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.resultBadgeText,
+                    {
+                      color: item.isDraw ? '#E65100' : item.won ? '#2E7D32' : '#C62828',
+                    },
+                  ]}
+                >
+                  {item.isDraw ? '平' : item.won ? '胜' : '负'}
+                </Text>
+              </View>
+              <View style={styles.historyInfo}>
+                <Text style={styles.historyOpponent} numberOfLines={1}>
+                  vs {item.opponentNickname}
+                  {item.isAi ? '（AI）' : ''}
+                </Text>
+                <Text style={styles.historyMeta}>
+                  {GAME_MODE_LABELS[item.mode as keyof typeof GAME_MODE_LABELS] ?? '对局'} ·{' '}
+                  {formatTime(item.timestamp)}
+                </Text>
+              </View>
+              <Text
+                style={[
+                  styles.historyScore,
+                  { color: item.isDraw ? '#FF9800' : item.won ? '#4CAF50' : '#E53935' },
+                ]}
+              >
+                {item.myScore} : {item.opponentScore}
+              </Text>
+            </View>
+          ))
+        )}
+      </View>
+
+      {/* 设置 */}
+      <View style={styles.settingCard}>
+        <Text style={styles.sectionTitle}>设置</Text>
+        <View style={styles.settingRow}>
+          <Text style={styles.settingLabel}>🔊 对局音效</Text>
+          <Switch value={soundOn} onValueChange={handleToggleSound} />
+        </View>
       </View>
 
       {/* 退出登录 */}
@@ -303,10 +415,97 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
-  rankScore: {
-    color: '#FF9800',
-    fontSize: 36,
+  tierEmoji: {
+    fontSize: 40,
+  },
+  tierName: {
+    fontSize: 22,
     fontWeight: 'bold',
+    marginTop: 4,
+  },
+  rankScore: {
+    color: '#999',
+    fontSize: 16,
+    marginTop: 4,
+  },
+  historyCard: {
+    backgroundColor: '#fff',
+    margin: 16,
+    marginTop: 0,
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  historyEmpty: {
+    color: '#999',
+    fontSize: 14,
+    textAlign: 'center',
+    paddingVertical: 12,
+  },
+  historyItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  resultBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  resultBadgeText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  historyInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  historyOpponent: {
+    color: '#333',
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  historyMeta: {
+    color: '#999',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  historyScore: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  settingCard: {
+    backgroundColor: '#fff',
+    margin: 16,
+    marginTop: 0,
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  settingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  settingLabel: {
+    color: '#333',
+    fontSize: 15,
   },
   logoutButton: {
     margin: 16,

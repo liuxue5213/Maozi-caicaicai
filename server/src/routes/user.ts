@@ -43,11 +43,35 @@ userRouter.put('/nickname', (req: any, res: Response) => {
   res.json({ success: true, data: { nickname } });
 });
 
-// 获取游戏记录
+// 获取游戏记录（按玩家视角返回：对手昵称、双方比分、胜负）
 userRouter.get('/history', (req: any, res: Response) => {
   const limit = parseInt(req.query.limit as string) || 50;
   const records = db.getUserGameRecords(req.userId!, limit);
-  res.json({ success: true, data: records });
+
+  const data = records.map((r) => {
+    const isPlayer1 = r.player1Id === req.userId;
+    const opponentId = isPlayer1 ? r.player2Id : r.player1Id;
+    const isDraw = r.scorePlayer1 === r.scorePlayer2;
+    const player1Won = Boolean(r.player1Won);
+    const won = isDraw ? false : isPlayer1 ? player1Won : !player1Won;
+    const opponent = opponentId ? db.findUserById(opponentId) : null;
+
+    return {
+      id: r.id,
+      timestamp: r.timestamp,
+      mode: r.mode,
+      isAi: !opponentId,
+      opponentNickname: opponent ? opponent.nickname : 'AI 对手',
+      myScore: isPlayer1 ? r.scorePlayer1 : r.scorePlayer2,
+      opponentScore: isPlayer1 ? r.scorePlayer2 : r.scorePlayer1,
+      isDraw,
+      won,
+      roundsCount: r.roundsCount,
+      durationMs: r.durationMs,
+    };
+  });
+
+  res.json({ success: true, data });
 });
 
 // 获取排行榜

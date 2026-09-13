@@ -19,6 +19,10 @@ interface UseWebSocketOptions {
   onOpponentReconnected?: () => void;
   /** 断线重连成功，服务器返回进行中对局的恢复状态 */
   onReconnectSuccess?: (payload: any) => void;
+  /** 私密房间已创建（房主收到，携带邀请码） */
+  onPrivateRoomCreated?: (payload: any) => void;
+  /** 好友加入私密房间，对局即将开始（房主收到） */
+  onPrivateRoomJoined?: (payload: any) => void;
   onAuthResult?: (payload: any) => void;
   onError?: (error: string) => void;
 }
@@ -56,7 +60,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       case ServerMessage.MATCHING:
         opts.onMatching?.(message.payload);
         break;
-      case ServerMessage.MATCH_FOUND:
       case ServerMessage.GAME_START:
         opts.onGameStart?.(message.payload);
         break;
@@ -80,6 +83,12 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         break;
       case ServerMessage.RECONNECT_SUCCESS:
         opts.onReconnectSuccess?.(message.payload);
+        break;
+      case ServerMessage.PRIVATE_ROOM_CREATED:
+        opts.onPrivateRoomCreated?.(message.payload);
+        break;
+      case ServerMessage.PRIVATE_ROOM_JOINED:
+        opts.onPrivateRoomJoined?.(message.payload);
         break;
       case ServerMessage.ERROR:
         opts.onError?.(message.payload?.error || '未知错误');
@@ -221,6 +230,20 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     [sendMessage]
   );
 
+  const createPrivateRoom = useCallback(
+    (mode: GameMode) => {
+      sendMessage(ClientMessage.CREATE_PRIVATE_ROOM, { mode });
+    },
+    [sendMessage]
+  );
+
+  const joinPrivateRoom = useCallback(
+    (code: string) => {
+      sendMessage(ClientMessage.JOIN_PRIVATE_ROOM, { code });
+    },
+    [sendMessage]
+  );
+
   // 清理
   useEffect(() => {
     return () => {
@@ -239,5 +262,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     cancelMatching,
     startAiMatch,
     makeChoice,
+    createPrivateRoom,
+    joinPrivateRoom,
   };
 }

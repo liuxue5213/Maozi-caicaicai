@@ -50,21 +50,84 @@ export const db = {
     getDatabase().prepare('INSERT OR IGNORE INTO user_stats (user_id, total_games, wins, losses, draws, current_win_streak, best_win_streak, rank) VALUES (?, 0, 0, 0, 0, 0, 0, 1000)').run(userId);
     return this.getStats(userId)!;
   },
-  updateStatsAfterGame(userId: string, won: boolean | null): DbStats {
+  /**
+   * 对局后更新战绩与段位分。
+   * won === null 表示平局。opponentRank 为对手的段位分（人机对战视为 1000），
+   * 按标准 ELO 期望分计算增减：赢强敌多加分，赢弱敌少加分，输给弱敌多扣分。
+   */
+  updateStatsAfterGame(userId: string, won: boolean | null, opponentRank = 1000): DbStats {
     const current = this.getStats(userId) || this.createStats(userId);
     const next: DbStats = { ...current, totalGames: current.totalGames + 1 };
-    if (won === null) { next.draws++; next.rank += 3; }
-    else if (won) { next.wins++; next.currentWinStreak++; next.bestWinStreak = Math.max(next.bestWinStreak, next.currentWinStreak); next.rank += 15 + Math.min(next.currentWinStreak * 2, 20); }
-    else { next.losses++; next.currentWinStreak = 0; next.rank = Math.max(100, next.rank - 10); }
+    // ELO 期望胜率（K=32），myRank 取更新前的分数
+    const expected = 1 / (1 + Math.pow(10, (opponentRank - current.rank) / 400));
+    if (won === null) {
+      next.draws++;
+      // 平局按期望差微调：爆冷逼平强敌加分，被弱敌逼平扣分，限定在 -2 ~ +3
+      next.rank += Math.max(-2, Math.min(3, Math.round(32 * (0.5 - expected))));
+    } else if (won) {
+      next.wins++;
+      next.currentWinStreak++;
+      next.bestWinStreak = Math.max(next.bestWinStreak, next.currentWinStreak);
+      next.rank += Math.max(8, Math.round(32 * (1 - expected)));
+    } else {
+      next.losses++;
+      next.currentWinStreak = 0;
+      next.rank = Math.max(100, next.rank - Math.max(6, Math.round(32 * expected * 0.75)));
+    }
     getDatabase().prepare('UPDATE user_stats SET total_games = ?, wins = ?, losses = ?, draws = ?, current_win_streak = ?, best_win_streak = ?, rank = ? WHERE user_id = ?').run(next.totalGames, next.wins, next.losses, next.draws, next.currentWinStreak, next.bestWinStreak, next.rank, userId);
     return next;
+  },
+
+  /**
+   * 查询玩家在指定榜单中的名次（1 起始）与有战绩的玩家总数。
+   * 打法与各 getLeaderboardBy* 的排序保持一致。
+   */
+  getMyRank(userId: string, type: 'wins' | 'streak' | 'rank'): { position: number; totalPlayers: number } {
+    const mine = this.getStats(userId);
+    if (!mine || mine.totalGames <= 0) return { position: 0, totalPlayers: this.countRankedPlayers() };
+
+    const countAhead = (sql: string, ...params: (string | number)[]): number =>
+      (getDatabase().prepare(sql).get(...params) as { count: number }).count;
+
+    let position: number;
+    if (type === 'wins') {
+      position =
+        1 +
+        countAhead(
+          'SELECT COUNT(*) AS count FROM user_stats WHERE total_games > 0 AND (wins > ? OR (wins = ? AND rank > ?))',
+          mine.wins, mine.wins, mine.rank
+        );
+    } else if (type === 'streak') {
+      position =
+        1 +
+        countAhead(
+          'SELECT COUNT(*) AS count FROM user_stats WHERE total_games > 0 AND (best_win_streak > ? OR (best_win_streak = ? AND rank > ?))',
+          mine.bestWinStreak, mine.bestWinStreak, mine.rank
+        );
+    } else {
+      position =
+        1 +
+        countAhead(
+          'SELECT COUNT(*) AS count FROM user_stats WHERE total_games > 0 AND (rank > ? OR (rank = ? AND wins > ?))',
+          mine.rank, mine.rank, mine.wins
+        );
+    }
+    return { position, totalPlayers: this.countRankedPlayers() };
+  },
+
+  countRankedPlayers(): number {
+    return (getDatabase().prepare('SELECT COUNT(*) AS count FROM user_stats WHERE total_games > 0').get() as { count: number }).count;
   },
   getLeaderboardByWins(limit = 100): Array<{ user: DbUser; stats: DbStats }> {
     const rows = getDatabase().prepare('SELECT u.*, s.* FROM user_stats s JOIN users u ON u.id = s.user_id WHERE s.total_games > 0 ORDER BY s.wins DESC, s.rank DESC LIMIT ?').all(limit) as Record<string, unknown>[];
     return rows.map((row) => ({ user: toUser(row)!, stats: toStats(row)! }));
   },
   getLeaderboardByWinStreak(limit = 100): Array<{ user: DbUser; stats: DbStats }> {
-    const rows = getDatabase().prepare('SELECT u.*, s.* FROM user_stats s JOIN users u ON u.id = s.user_id WHERE s.best_win_streak > 0 ORDER BY s.best_win_streak DESC, s.rank DESC LIMIT ?').all(limit) as Record<string, unknown>[];
+    const rows = getDatabase().prepare('SELECT u.*, s.* FROM user_stats s JOIN users u ON u.id = s.user_id WHERE s.total_games > 0 ORDER BY s.best_win_streak DESC, s.rank DESC LIMIT ?').all(limit) as Record<string, unknown>[];
+    return rows.map((row) => ({ user: toUser(row)!, stats: toStats(row)! }));
+  },
+  getLeaderboardByRank(limit = 100): Array<{ user: DbUser; stats: DbStats }> {
+    const rows = getDatabase().prepare('SELECT u.*, s.* FROM user_stats s JOIN users u ON u.id = s.user_id WHERE s.total_games > 0 ORDER BY s.rank DESC, s.wins DESC LIMIT ?').all(limit) as Record<string, unknown>[];
     return rows.map((row) => ({ user: toUser(row)!, stats: toStats(row)! }));
   },
   addGameRecord(record: DbGameRecord): void {

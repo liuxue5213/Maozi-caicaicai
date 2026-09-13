@@ -12,6 +12,8 @@
  *   3. START_AI_MATCH 防重入（连发请求不产生第二个房间）
  *   4. 异常断线后 RECONNECT 恢复对局（状态按视角还原）
  *   5. 主动退出（close code 1000）立即判负
+ *   6. 私密房间（邀请码）：建房/入房/开局/一次性校验 + 我的名次接口
+ *   7. 未打过对局时"我的名次"为 0、未授权返回 401
  */
 import WebSocket from 'ws';
 
@@ -111,14 +113,20 @@ async function registerUser(prefix) {
   // 用户名限 3-20 字符：前缀 + 短随机后缀
   const rand = Math.random().toString(36).slice(2, 5);
   const username = `${prefix.toLowerCase()}${Date.now().toString(36)}${rand}`;
-  const res = await fetch(`${API_URL}/auth/register`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password: 'password123', nickname: `${prefix}昵称` }),
-  });
-  const body = await res.json();
-  if (!body.success) throw new Error(`注册失败: ${JSON.stringify(body)}`);
-  return body.data;
+  let lastBody = null;
+  // 认证接口有限流（每IP每分钟10次），套件内注册较多账号时等待重试
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const res = await fetch(`${API_URL}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password: 'password123', nickname: `${prefix}昵称` }),
+    });
+    lastBody = await res.json();
+    if (lastBody.success) return lastBody.data;
+    if (!/频繁/.test(lastBody.error || '')) break;
+    await sleep(20000);
+  }
+  throw new Error(`注册失败: ${JSON.stringify(lastBody)}`);
 }
 
 /** 响应选择阶段：SELECTING 广播到达后随机出拳（仅认调用之后到达的新广播，防止匹配到历史消息） */
@@ -337,6 +345,90 @@ async function testAbandonForfeit() {
   sb.terminate();
 }
 
+// ---- 用例 6: 私密房间（邀请码）全流程 ----
+async function testPrivateRoom() {
+  const [uA, uB] = await Promise.all([registerUser('PR1'), registerUser('PR2')]);
+  const sa = new TestSocket('pr-A');
+  const sb = new TestSocket('pr-B');
+  await Promise.all([sa.connect(), sb.connect()]);
+  sa.auth(uA.token);
+  sb.auth(uB.token);
+
+  // 错误邀请码应返回错误
+  sb.send('JOIN_PRIVATE_ROOM', { code: 'ZZZZ' });
+  const joinErr = await sb.waitFor('ERROR');
+  assert(/房间/.test(joinErr.payload.error), `错误邀请码未得到预期错误: ${joinErr.payload.error}`);
+
+  // A 建房，收到 4 位邀请码
+  sa.send('CREATE_PRIVATE_ROOM', { mode: 3 });
+  const created = await sa.waitFor('PRIVATE_ROOM_CREATED');
+  const code = created.payload.code;
+  assert(/^[A-Z2-9]{4}$/.test(code), `邀请码格式异常: ${code}`);
+
+  // 房主不能加入自己的房间
+  sa.send('JOIN_PRIVATE_ROOM', { code });
+  const selfErr = await sa.waitFor('ERROR');
+  assert(/自己/.test(selfErr.payload.error), '未阻止房主加入自己的房间');
+
+  // B 凭码入房，双方开局
+  sb.send('JOIN_PRIVATE_ROOM', { code });
+  const [startA, startB] = await Promise.all([sa.waitFor('GAME_START'), sb.waitFor('GAME_START')]);
+  assert(startA.payload.opponent?.nickname === uB.user.nickname, '私密房间 A 的对手不正确');
+  assert(startB.payload.opponent?.nickname === uA.user.nickname, '私密房间 B 的对手不正确');
+
+  // 打完整局
+  let roundSeen = 0;
+  while (roundSeen < 40) {
+    roundSeen++;
+    autoPlay([sa, sb]);
+    const overPromise = Promise.all([
+      sa.waitFor('GAME_OVER').catch(() => null),
+      sb.waitFor('GAME_OVER').catch(() => null),
+    ]).then(() => 'over');
+    const roundPromise = Promise.all([
+      sa.waitFor('ROUND_RESULT', (m) => m.payload.roundNumber >= roundSeen),
+      sb.waitFor('ROUND_RESULT', (m) => m.payload.roundNumber >= roundSeen),
+    ]);
+    const outcome = await Promise.race([overPromise, roundPromise]);
+    if (outcome === 'over') break;
+  }
+  const overA = sa.messages.find((m) => m.type === 'GAME_OVER');
+  const overB = sb.messages.find((m) => m.type === 'GAME_OVER');
+  assert(overA && overB, '私密房间对局未结束');
+
+  // 邀请码一次性：开局即销毁，终局后再凭码进房应失败
+  sb.send('JOIN_PRIVATE_ROOM', { code });
+  const reuseErr = await sb.waitFor('ERROR');
+  assert(/房间/.test(reuseErr.payload.error), '邀请码开局后未被销毁');
+
+  // 打完对局后，"我的名次"接口应返回有效名次
+  const meRes = await fetch(`${API_URL}/leaderboard/me?type=wins`, {
+    headers: { Authorization: `Bearer ${uA.token}` },
+  });
+  const meBody = await meRes.json();
+  assert(
+    meBody.success && meBody.data.position >= 1 && meBody.data.totalPlayers >= 2,
+    `我的名次接口异常: ${JSON.stringify(meBody)}`
+  );
+
+  sa.terminate();
+  sb.terminate();
+}
+
+// ---- 用例 7: 未打过对局时"我的名次"为 0 ----
+async function testMyRankNoGames() {
+  const user = await registerUser('MR1');
+  const res = await fetch(`${API_URL}/leaderboard/me?type=wins`, {
+    headers: { Authorization: `Bearer ${user.token}` },
+  });
+  const body = await res.json();
+  assert(body.success && body.data.position === 0, `未打对局时名次应为 0: ${JSON.stringify(body)}`);
+
+  // 未授权应 401
+  const anon = await fetch(`${API_URL}/leaderboard/me?type=wins`);
+  assert(anon.status === 401, '未授权访问 /leaderboard/me 应返回 401');
+}
+
 function assert(cond, message) {
   if (!cond) throw new Error(message);
 }
@@ -348,6 +440,8 @@ const cases = [
   ['AI 匹配防重入', testStartAiMatchGuard],
   ['断线重连恢复', testReconnect],
   ['主动退出立即判负', testAbandonForfeit],
+  ['私密房间（邀请码）全流程', testPrivateRoom],
+  ['我的名次接口', testMyRankNoGames],
 ];
 
 console.log(`冒烟测试开始 -> ws=${WS_URL} api=${API_URL}`);
