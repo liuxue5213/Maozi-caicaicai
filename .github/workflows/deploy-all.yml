@@ -48,6 +48,20 @@ jobs:
           EXPO_PUBLIC_WS_URL: ws://${{ secrets.SERVER_HOST }}:60205/ws
 
       # ---- 部署后端到服务器 ----
+      # 注意：必须先同步 shared 编译产物。服务器运行时从
+      # node_modules/@maozi/shared/dist 加载，漏传会导致对局结算抛
+      # TypeError（getGameCountTitle is not a function），对局永远无法结束。
+      - name: Deploy shared package via SCP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_SSH_PORT || 22 }}
+          source: "shared/dist/*"
+          target: "/opt/maozi-rps/server/node_modules/@maozi/shared"
+          strip_components: 1
+
       - name: Deploy backend via SCP
         uses: appleboy/scp-action@v0.1.7
         with:

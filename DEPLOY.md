@@ -40,7 +40,10 @@ mkdir -p /opt/maozi-rps/server/data
 cd /opt/maozi-rps/server
 # 上传 dist/ 和 package.json
 npm install --production
-pm2 start ecosystem.config.js
+# ⚠️ 必须同步 shared 编译产物（服务器运行时从 node_modules/@maozi/shared/dist 加载），
+#    漏传会导致对局结算抛 TypeError，对局永远无法结束、客户端一直等待
+# scp -r shared/dist/* root@服务器IP:/opt/maozi-rps/server/node_modules/@maozi/shared/dist/
+pm2 restart maozi-rps-server || pm2 start ecosystem.config.js
 pm2 save
 pm2 startup
 ```
