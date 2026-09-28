@@ -194,6 +194,8 @@ export const db = {
 };
 
 export const onlineUsers: Set<string> = new Set();
+/** 正在进行非 AI 对局的玩家（供好友列表展示"观战"入口） */
+export const inGameUsers: Set<string> = new Set();
 
 export async function initDatabase(): Promise<void> {
   if (database) return;

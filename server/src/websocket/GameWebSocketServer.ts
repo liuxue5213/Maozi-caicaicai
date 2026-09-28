@@ -15,7 +15,7 @@ import {
   getWinStreakTitle,
   PrivateRoomCreatedPayload,
 } from '@maozi/shared';
-import { db, onlineUsers, DbUser } from '../db/database';
+import { db, onlineUsers, inGameUsers, DbUser } from '../db/database';
 import { verifyToken } from '../utils/jwt';
 
 // ============================================
@@ -127,6 +127,8 @@ interface GameRoom {
   suddenDeathDecided: boolean;
   /** 每轮出拳记录（player1 视角），终局写入战绩用于回放 */
   roundsHistory: Array<{ p1: GameChoice; p2: GameChoice; result: RoundResult }>;
+  /** 观战者（好友）列表，watchedIdx 为其关注的一方 */
+  spectators: Array<{ clientId: string; watchedIdx: 0 | 1 }>;
 }
 
 export class GameWebSocketServer {
@@ -251,6 +253,9 @@ export class GameWebSocketServer {
         break;
       case ClientMessage.CHALLENGE_RESPONSE:
         if (client.isAuthenticated) this.handleChallengeResponse(clientId, payload);
+        break;
+      case ClientMessage.WATCH_FRIEND:
+        if (client.isAuthenticated) this.handleWatchFriend(clientId, payload);
         break;
       case ClientMessage.MAKE_CHOICE:
         if (client.isAuthenticated) this.handleMakeChoice(clientId, payload);
@@ -660,6 +665,73 @@ export class GameWebSocketServer {
     }
   }
 
+  // ---- 观战好友对局 ----
+
+  private handleWatchFriend(clientId: string, payload: { targetId: string }): void {
+    const watcher = this.clients.get(clientId);
+    if (!watcher || watcher.isMatching || watcher.currentGameId) return;
+
+    const targetId = String(payload?.targetId || '');
+    const gameId = this.userGames.get(targetId);
+    const game = gameId ? this.games.get(gameId) : undefined;
+    if (!game || game.isAi || game.phase === GamePhase.FINISHED) {
+      this.sendToClient(watcher.ws, { type: ServerMessage.ERROR, payload: { error: '对方当前没有可观战的对局' } });
+      return;
+    }
+
+    const watchedIdx: 0 | 1 = game.players[0].user.id === targetId ? 0 : 1;
+    const opponentIdx = watchedIdx === 0 ? 1 : 0;
+    // 先从其他对局的观战列表移除，再挂到本局
+    this.detachSpectator(clientId);
+    game.spectators.push({ clientId, watchedIdx });
+    // 占用 currentGameId：观战期间不能开新对局/约战/匹配，终局由 cleanup 统一释放
+    watcher.currentGameId = game.id;
+
+    const w = game.players[watchedIdx].user;
+    const o = game.players[opponentIdx].user;
+    this.sendToClient(watcher.ws, {
+      type: ServerMessage.SPECTATE_START,
+      payload: {
+        gameId: game.id,
+        mode: game.mode,
+        watched: { id: w.id, nickname: w.nickname, avatar: w.avatar },
+        opponent: { id: o.id, nickname: o.nickname, avatar: o.avatar },
+        roundNumber: game.roundNumber,
+        watchedScore: game.players[watchedIdx].score,
+        opponentScore: game.players[opponentIdx].score,
+        suddenDeath: game.suddenDeath,
+      },
+    });
+    console.log(`[Spectate] ${watcher.nickname} 开始观战 ${w.nickname} 的对局 (${game.id.slice(0, 8)})`);
+  }
+
+  /** 从所有对局的观战列表中移除该连接 */
+  private detachSpectator(clientId: string): void {
+    this.games.forEach((game) => {
+      game.spectators = game.spectators.filter((s) => s.clientId !== clientId);
+    });
+  }
+
+  /** 向观战者广播阶段更新（按其关注一方的视角） */
+  private broadcastPhaseToSpectators(game: GameRoom, phase: GamePhase, duration: number): void {
+    for (const s of game.spectators) {
+      const watcher = this.clients.get(s.clientId);
+      if (!watcher) continue; // 观战者连接已不在，跳过（断线时会统一清理）
+      const opp = s.watchedIdx === 0 ? 1 : 0;
+      this.sendToClient(watcher.ws, {
+        type: ServerMessage.PHASE_UPDATE,
+        payload: {
+          phase,
+          roundNumber: game.roundNumber,
+          timeRemaining: duration,
+          playerScore: game.players[s.watchedIdx].score,
+          opponentScore: game.players[opp].score,
+          suddenDeath: game.suddenDeath,
+        },
+      });
+    }
+  }
+
   private startGame(
     player1: ConnectedClient,
     player2: ConnectedClient | { user: DbUser; ws: WebSocket },
@@ -707,6 +779,7 @@ export class GameWebSocketServer {
       suddenDeath: false,
       suddenDeathDecided: false,
       roundsHistory: [],
+      spectators: [],
     };
 
     this.games.set(gameId, game);
@@ -721,6 +794,9 @@ export class GameWebSocketServer {
       player2.matchingMode = null;
       player2.matchingSince = null;
       this.userGames.set(player2.userId, gameId);
+      // 标记双方"对局中"，供好友列表展示观战入口
+      inGameUsers.add(player1.userId);
+      inGameUsers.add(player2.userId);
     }
 
     // 获取对手信息
@@ -760,20 +836,24 @@ export class GameWebSocketServer {
       case GamePhase.PREPARATION:
         duration = T.PREPARATION_MS();
         this.broadcastPhaseUpdate(game, GamePhase.PREPARATION, duration);
+        this.broadcastPhaseToSpectators(game, GamePhase.PREPARATION, duration);
         break;
       case GamePhase.SELECTING:
         duration = T.SELECTING_MS();
         this.broadcastPhaseUpdate(game, GamePhase.SELECTING, duration);
+        this.broadcastPhaseToSpectators(game, GamePhase.SELECTING, duration);
         break;
       case GamePhase.SETTLEMENT:
         duration = T.SETTLEMENT_MS();
         // 修复: 结算阶段也要广播 PHASE_UPDATE，客户端才能切换到结算视图
         this.broadcastPhaseUpdate(game, GamePhase.SETTLEMENT, duration);
+        this.broadcastPhaseToSpectators(game, GamePhase.SETTLEMENT, duration);
         this.processSettlement(game);
         break;
       case GamePhase.BREAK:
         duration = T.BREAK_MS();
         this.broadcastPhaseUpdate(game, GamePhase.BREAK, duration);
+        this.broadcastPhaseToSpectators(game, GamePhase.BREAK, duration);
         break;
       case GamePhase.FINISHED:
         this.processGameOver(game);
@@ -898,6 +978,32 @@ export class GameWebSocketServer {
         })
       );
     }
+
+    // 观战者视角（跟随其关注的一方）
+    for (const s of game.spectators) {
+      const watcher = this.clients.get(s.clientId);
+      if (!watcher) continue;
+      const opp = s.watchedIdx === 0 ? 1 : 0;
+      const watchedChoice = game.players[s.watchedIdx].choice;
+      const oppChoice = game.players[opp].choice;
+      const watchedResult =
+        result === RoundResult.DRAW
+          ? RoundResult.DRAW
+          : (s.watchedIdx === 0 && result === RoundResult.WIN) || (s.watchedIdx === 1 && result === RoundResult.LOSE)
+            ? RoundResult.WIN
+            : RoundResult.LOSE;
+      this.sendToClient(watcher.ws, {
+        type: ServerMessage.ROUND_RESULT,
+        payload: {
+          roundNumber: game.roundNumber,
+          playerChoice: watchedChoice,
+          opponentChoice: oppChoice,
+          result: watchedResult,
+          playerScore: game.players[s.watchedIdx].score,
+          opponentScore: game.players[opp].score,
+        },
+      });
+    }
   }
 
   private processGameOver(game: GameRoom): void {
@@ -971,6 +1077,22 @@ export class GameWebSocketServer {
       });
     }
 
+    // 通知观战者对局结束
+    for (const s of game.spectators) {
+      const watcher = this.clients.get(s.clientId);
+      if (!watcher) continue;
+      const opp = s.watchedIdx === 0 ? 1 : 0;
+      this.sendToClient(watcher.ws, {
+        type: ServerMessage.SPECTATE_END,
+        payload: {
+          watchedScore: game.players[s.watchedIdx].score,
+          opponentScore: game.players[opp].score,
+        },
+      });
+      watcher.currentGameId = null;
+    }
+    game.spectators = [];
+
     // 修复: 清理游戏房间
     this.cleanupGame(game.id);
   }
@@ -990,6 +1112,7 @@ export class GameWebSocketServer {
       if (this.userGames.get(p.user.id) === gameId) {
         this.userGames.delete(p.user.id);
       }
+      inGameUsers.delete(p.user.id);
     });
     this.clients.forEach((client) => {
       if (client.currentGameId === gameId) {
@@ -1193,9 +1316,10 @@ export class GameWebSocketServer {
       }
     }
 
-    // 清理该连接名下的私密房间与挂起约战
+    // 清理该连接名下的私密房间、挂起约战与观战
     this.removePendingRoomsOfHost(clientId);
     this.cleanupChallengesFor(clientId, client.userId);
+    this.detachSpectator(clientId);
 
     if (!Array.from(this.clients.values()).some((other) => other.userId === client.userId && other.isAuthenticated)) {
       onlineUsers.delete(client.userId);

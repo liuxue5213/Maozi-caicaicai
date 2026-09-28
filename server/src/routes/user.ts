@@ -1,5 +1,5 @@
 import { Router, Response } from 'express';
-import { db, onlineUsers } from '../db/database';
+import { db, onlineUsers, inGameUsers } from '../db/database';
 import { authMiddleware } from '../middleware/auth';
 import { AVATAR_PRESETS, FriendInfo, buildAchievementProgress } from '@maozi/shared';
 
@@ -58,7 +58,7 @@ userRouter.put('/avatar', (req: any, res: Response) => {
 
 // ---- 好友 ----
 
-// 好友列表（带在线状态）
+// 好友列表（带在线/对局中状态）
 userRouter.get('/friends', (req: any, res: Response) => {
   const friends: FriendInfo[] = db.getFriends(req.userId!).map(({ user, rank }) => ({
     id: user.id,
@@ -67,6 +67,7 @@ userRouter.get('/friends', (req: any, res: Response) => {
     avatar: user.avatar,
     rank,
     online: onlineUsers.has(user.id),
+    inGame: inGameUsers.has(user.id),
   }));
   res.json({ success: true, data: friends });
 });

@@ -127,6 +127,8 @@ export enum ClientMessage {
   // 好友约战
   CHALLENGE = 'CHALLENGE',
   CHALLENGE_RESPONSE = 'CHALLENGE_RESPONSE',
+  // 观战好友对局
+  WATCH_FRIEND = 'WATCH_FRIEND',
   // 心跳
   PING = 'PING',
   // 重连
@@ -159,6 +161,9 @@ export enum ServerMessage {
   // 好友约战：收到邀请 / 发起方收到拒绝或超时
   CHALLENGE_RECEIVED = 'CHALLENGE_RECEIVED',
   CHALLENGE_DECLINED = 'CHALLENGE_DECLINED',
+  // 观战：进入对局 / 对局结束
+  SPECTATE_START = 'SPECTATE_START',
+  SPECTATE_END = 'SPECTATE_END',
   // 心跳
   PONG = 'PONG',
   // 错误
@@ -223,7 +228,29 @@ export interface ChallengeDeclinedPayload {
   reason: ChallengeDeclinedReason;
 }
 
-/** 好友列表项（含在线状态） */
+export interface WatchFriendPayload {
+  targetId: string;
+}
+
+export interface SpectateStartPayload {
+  gameId: string;
+  mode: GameMode;
+  /** 被观战的好友（比分左侧） */
+  watched: { id: string; nickname: string; avatar?: string | null };
+  /** 其对手（比分右侧） */
+  opponent: { id: string; nickname: string; avatar?: string | null };
+  roundNumber: number;
+  watchedScore: number;
+  opponentScore: number;
+  suddenDeath?: boolean;
+}
+
+export interface SpectateEndPayload {
+  watchedScore: number;
+  opponentScore: number;
+}
+
+/** 好友列表项（含在线/对局中状态） */
 export interface FriendInfo {
   id: string;
   username: string;
@@ -231,6 +258,7 @@ export interface FriendInfo {
   avatar: string | null;
   rank: number;
   online: boolean;
+  inGame?: boolean;
 }
 
 export interface MakeChoicePayload {

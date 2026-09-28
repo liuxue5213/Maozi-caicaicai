@@ -29,6 +29,9 @@ interface UseWebSocketOptions {
   onChallengeReceived?: (payload: any) => void;
   /** 自己发起的约战被拒绝/超时/对方不可用 */
   onChallengeDeclined?: (payload: any) => void;
+  /** 观战：成功进入对局 / 对局结束 */
+  onSpectateStart?: (payload: any) => void;
+  onSpectateEnd?: (payload: any) => void;
   onAuthResult?: (payload: any) => void;
   onError?: (error: string) => void;
 }
@@ -104,6 +107,12 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         break;
       case ServerMessage.CHALLENGE_DECLINED:
         opts.onChallengeDeclined?.(message.payload);
+        break;
+      case ServerMessage.SPECTATE_START:
+        opts.onSpectateStart?.(message.payload);
+        break;
+      case ServerMessage.SPECTATE_END:
+        opts.onSpectateEnd?.(message.payload);
         break;
       case ServerMessage.ERROR:
         opts.onError?.(message.payload?.error || '未知错误');
@@ -280,6 +289,13 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     [sendMessage]
   );
 
+  const watchFriend = useCallback(
+    (targetId: string) => {
+      sendMessage(ClientMessage.WATCH_FRIEND, { targetId });
+    },
+    [sendMessage]
+  );
+
   // 清理
   useEffect(() => {
     return () => {
@@ -303,5 +319,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     sendEmoji,
     challenge,
     challengeResponse,
+    watchFriend,
   };
 }

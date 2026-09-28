@@ -151,20 +151,29 @@ export function FriendsScreen() {
             <Text style={[styles.itemNickname, { color: t.text }]}>{item.nickname}</Text>
             <View style={[styles.onlineDot, item.online ? styles.onlineOn : styles.onlineOff]} />
             <Text style={[styles.onlineText, { color: item.online ? t.success : t.textMuted }]}>
-              {item.online ? '在线' : '离线'}
+              {item.online ? (item.inGame ? '对局中' : '在线') : '离线'}
             </Text>
           </View>
           <Text style={[styles.itemTier, { color: tier.color }]}>
             {tier.emoji} {tier.name} · {item.rank}分
           </Text>
         </View>
-        <TouchableOpacity
-          style={[styles.challengeButton, { backgroundColor: '#FF7043' }, !item.online && styles.challengeButtonDisabled]}
-          disabled={!item.online}
-          onPress={() => handleChallenge(item)}
-        >
-          <Text style={styles.challengeButtonText}>约战</Text>
-        </TouchableOpacity>
+        {item.inGame ? (
+          <TouchableOpacity
+            style={[styles.challengeButton, { backgroundColor: t.primary }]}
+            onPress={() => nav.navigate('Game', { mode: GameMode.BEST_OF_3, matchType: 'spectate', targetId: item.id })}
+          >
+            <Text style={styles.challengeButtonText}>观战</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={[styles.challengeButton, { backgroundColor: '#FF7043' }, !item.online && styles.challengeButtonDisabled]}
+            disabled={!item.online}
+            onPress={() => handleChallenge(item)}
+          >
+            <Text style={styles.challengeButtonText}>约战</Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity style={styles.removeButton} onPress={() => handleRemove(item)}>
           <Text style={[styles.removeButtonText, { color: t.textMuted }]}>删除</Text>
         </TouchableOpacity>

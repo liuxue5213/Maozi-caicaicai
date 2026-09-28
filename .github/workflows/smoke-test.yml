@@ -1,0 +1,55 @@
+name: Smoke Test
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            client/package-lock.json
+            server/package-lock.json
+
+      - name: Build shared
+        run: |
+          cd shared
+          npm install
+          npm run build
+
+      - name: Build server
+        run: |
+          cd server
+          npm install
+          npm run build
+
+      - name: Start server
+        run: |
+          cd server
+          GAME_TIME_SCALE=0.15 PORT=61990 \
+          DATABASE_PATH=/tmp/smoke-ci.db JWT_SECRET=ci-secret \
+          AUTH_RATE_LIMIT=200 API_RATE_LIMIT=600 \
+          node dist/index.js &
+          for i in $(seq 1 20); do
+            curl -sf http://localhost:61990/api/health && break
+            sleep 1
+          done
+
+      - name: Run smoke tests
+        run: |
+          cd server
+          node scripts/smoke-test.mjs ws://localhost:61990/ws http://localhost:61990/api

@@ -21,13 +21,13 @@ import { useTheme } from '../theme';
 
 interface GameParams {
   mode: GameMode;
-  matchType: 'online' | 'ai' | 'private' | 'challenge' | 'friend-game';
+  matchType: 'online' | 'ai' | 'private' | 'challenge' | 'friend-game' | 'spectate';
   difficulty?: AiDifficulty;
   /** matchType === 'private' 时：create=建房 / join=凭码进房 */
   privateAction?: 'create' | 'join';
   /** matchType === 'private' && privateAction === 'join' 时的邀请码 */
   roomCode?: string;
-  /** matchType === 'challenge' 时的约战目标好友 id */
+  /** matchType === 'challenge'/'spectate' 时的目标好友 id */
   targetId?: string;
 }
 
@@ -170,6 +170,10 @@ export function GameScreen() {
   const [suddenDeath, setSuddenDeath] = useState(false);
   /** 私密房间：房主收到的邀请码（非空表示等待好友加入） */
   const [privateRoomCode, setPrivateRoomCode] = useState<string | null>(null);
+  /** 观战信息：被观战好友（比分左侧显示其名字） */
+  const [spectateWatched, setSpectateWatched] = useState<string | null>(null);
+  /** 观战已结束（对方对局打完） */
+  const [spectateEnded, setSpectateEnded] = useState(false);
   /** 结算动画：'pump' = 石头剪刀布蓄力拍，'reveal' = 亮出真实手势 */
   const [revealStage, setRevealStage] = useState<'pump' | 'reveal'>('reveal');
   const [pumpBeat, setPumpBeat] = useState(0);
@@ -338,8 +342,11 @@ export function GameScreen() {
   /** 私密房间流程出错（房间不存在/已失效等）：提示并返回 */
   const handleWsError = useCallback(
     (error: string) => {
-      if (matchType === 'private' && phaseRef.current === GamePhase.WAITING) {
-        Alert.alert('无法进入房间', error, [
+      if (
+        (matchType === 'private' || matchType === 'spectate') &&
+        phaseRef.current === GamePhase.WAITING
+      ) {
+        Alert.alert(matchType === 'spectate' ? '无法观战' : '无法进入房间', error, [
           { text: '确定', onPress: () => navigation.goBack() },
         ]);
       }
@@ -362,6 +369,28 @@ export function GameScreen() {
     },
     [matchType, navigation]
   );
+
+  /** 观战：进入对局，按被观战好友的视角展示 */
+  const handleSpectateStart = useCallback((payload: any) => {
+    setSpectateWatched(payload?.watched?.nickname || '好友');
+    setSpectateEnded(false);
+    setIsMatching(false);
+    setGameResult(null);
+    setOpponentNickname(payload?.opponent?.nickname || '对手');
+    setOpponentAvatar(payload?.opponent?.avatar ?? null);
+    setRoundNumber(payload?.roundNumber ?? 1);
+    setPlayerScore(payload?.watchedScore ?? 0);
+    setOpponentScore(payload?.opponentScore ?? 0);
+    setSuddenDeath(Boolean(payload?.suddenDeath));
+  }, []);
+
+  /** 观战：好友的对局结束 */
+  const handleSpectateEnd = useCallback((payload: any) => {
+    setPlayerScore(payload?.watchedScore ?? 0);
+    setOpponentScore(payload?.opponentScore ?? 0);
+    setSpectateEnded(true);
+    setPhase(GamePhase.FINISHED);
+  }, []);
 
   /** 断线恢复：按服务器返回的对局状态重建界面 */
   const handleReconnectSuccess = useCallback((payload: any) => {
@@ -396,6 +425,8 @@ export function GameScreen() {
     onPrivateRoomJoined: handlePrivateRoomJoined,
     onEmojiReceived: handleEmojiReceived,
     onChallengeDeclined: handleChallengeDeclined,
+    onSpectateStart: handleSpectateStart,
+    onSpectateEnd: handleSpectateEnd,
     onError: handleWsError,
   });
 
@@ -477,12 +508,14 @@ export function GameScreen() {
   useEffect(() => {
     if (!ws.isConnected || !ws.isAuthenticated || phase !== GamePhase.WAITING) return;
 
-    if (matchType === 'private' || matchType === 'challenge') {
-      // 建房/进房/约战只发一次：失败时由 onError/CHALLENGE_DECLINED 弹窗返回，避免无限重试
+    if (matchType === 'private' || matchType === 'challenge' || matchType === 'spectate') {
+      // 建房/进房/约战/观战只发一次：失败时由 onError/CHALLENGE_DECLINED 弹窗返回，避免无限重试
       if (privateInitiatedRef.current) return;
       privateInitiatedRef.current = true;
       if (matchType === 'challenge') {
         ws.challenge(targetId || '', mode);
+      } else if (matchType === 'spectate') {
+        ws.watchFriend(targetId || '');
       } else if (privateAction === 'join' && roomCode) {
         ws.joinPrivateRoom(roomCode);
       } else {
@@ -521,6 +554,11 @@ export function GameScreen() {
     phase === GamePhase.BREAK;
 
   const handleQuitPress = () => {
+    // 观战不是参战方，退出无需判负确认
+    if (spectateWatched) {
+      navigation.goBack();
+      return;
+    }
     if (!isGameInProgress(phase)) {
       navigation.goBack();
       return;
@@ -580,9 +618,11 @@ export function GameScreen() {
                 ? '等待好友接受约战...'
                 : matchType === 'friend-game'
                   ? '正在进入对局...'
-                  : isMatching
-                    ? '正在匹配对手...'
-                    : '正在连接服务器...'}
+                  : matchType === 'spectate'
+                    ? '正在进入观战...'
+                    : isMatching
+                      ? '正在匹配对手...'
+                      : '正在连接服务器...'}
             </Text>
             {isMatching && matchType === 'online' && (
               <TouchableOpacity
@@ -608,6 +648,34 @@ export function GameScreen() {
         );
 
       case GamePhase.SELECTING:
+        // 观战模式：看不到双方手牌，只展示倒计时
+        if (spectateWatched) {
+          return (
+            <View style={styles.centerContent}>
+              <View style={[styles.choiceCircle, { backgroundColor: t.card, borderColor: t.border }]}>
+                <Text style={styles.choiceEmoji}>👀</Text>
+              </View>
+              <Text style={[styles.playerName, { color: t.textSecondary }]}>
+                正在观战 {spectateWatched} 的对局
+              </Text>
+              <View style={[styles.timerBar, { backgroundColor: t.border }]}>
+                <View
+                  style={[
+                    styles.timerProgress,
+                    {
+                      width: `${Math.min(100, (timeRemaining / phaseTotalRef.current) * 100)}%`,
+                      backgroundColor: timerUrgent ? t.danger : t.warning,
+                    },
+                  ]}
+                />
+              </View>
+              <Text style={[styles.timerText, styles.timerTextSmall, { color: timerUrgent ? t.danger : t.warning }]}>
+                {Math.ceil(timeRemaining / 1000)}s
+              </Text>
+              <Text style={[styles.hintText, { color: t.textMuted }]}>等待双方出拳，结果揭晓后自动展示</Text>
+            </View>
+          );
+        }
         return (
           <View style={styles.selectingContent}>
             {/* 对手选择 */}
@@ -741,6 +809,26 @@ export function GameScreen() {
         );
 
       case GamePhase.FINISHED:
+        // 观战结束：展示终局比分，只提供返回
+        if (spectateWatched && spectateEnded) {
+          return (
+            <View style={[styles.gameOverCard, { backgroundColor: t.card, borderColor: t.border }]}>
+              <Text style={styles.resultEmoji}>👀</Text>
+              <Text style={[styles.resultText, { color: t.text }]}>观战结束</Text>
+              <Text style={[styles.finalScore, { color: t.textSecondary }]}>
+                {playerScore} : {opponentScore}
+              </Text>
+              <View style={styles.gameOverButtons}>
+                <TouchableOpacity
+                  style={[styles.gameOverButton, { backgroundColor: t.primary }]}
+                  onPress={() => navigation.goBack()}
+                >
+                  <Text style={[styles.gameOverButtonText, { color: t.onGradient }]}>返回</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          );
+        }
         return (
           <View style={[styles.gameOverCard, { backgroundColor: t.card, borderColor: t.border }]}>
             {/* 整局获胜撒彩带 */}
@@ -847,9 +935,9 @@ export function GameScreen() {
         </View>
         <View style={styles.scoreRow}>
           <View style={styles.scoreSide}>
-            <Text style={styles.scoreAvatar}>{user?.avatar || DEFAULT_AVATAR}</Text>
+            <Text style={styles.scoreAvatar}>{spectateWatched ? '👀' : (user?.avatar || DEFAULT_AVATAR)}</Text>
             <Text style={styles.scoreName} numberOfLines={1}>
-              {user?.nickname || '我'}
+              {spectateWatched || user?.nickname || '我'}
             </Text>
             <Text style={styles.scoreValue}>{playerScore}</Text>
           </View>
@@ -879,8 +967,8 @@ export function GameScreen() {
       {/* 游戏区域 */}
       <View style={styles.gameArea}>{renderPhase()}</View>
 
-      {/* 对局内快捷表情栏 */}
-      {isGameInProgress(phase) && (
+      {/* 对局内快捷表情栏（观战者不显示） */}
+      {isGameInProgress(phase) && !spectateWatched && (
         <View style={[styles.emojiBar, { paddingBottom: Math.max(insets.bottom, 8) + 10 }]}>
           {GAME_EMOJIS.map((emoji) => (
             <TouchableOpacity

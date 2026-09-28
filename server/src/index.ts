@@ -33,19 +33,19 @@ app.use((req, _res, next) => {
   next();
 });
 
-// 速率限制：认证接口每IP每分钟最多10次
+// 速率限制：认证接口每IP每分钟最多 AUTH_RATE_LIMIT 次（默认10，可用环境变量放宽供压测/CI）
 const authLimiter = rateLimit({
   windowMs: 60 * 1000, // 1分钟
-  max: 10,
+  max: Number(process.env.AUTH_RATE_LIMIT) || 10,
   message: { success: false, error: '请求过于频繁，请稍后再试' },
   standardHeaders: true,
   legacyHeaders: false,
 });
 
-// 通用API速率限制：每IP每分钟最多60次
+// 通用API速率限制：每IP每分钟最多 API_RATE_LIMIT 次
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 60,
+  max: Number(process.env.API_RATE_LIMIT) || 60,
   message: { success: false, error: '请求过于频繁，请稍后再试' },
   standardHeaders: true,
   legacyHeaders: false,

@@ -18,6 +18,7 @@
  *   9. 好友增删/在线状态 + 约战接受/拒绝/忙碌不可约战
  *  10. 成就计算（与实际对局胜负对账）
  *  11. 对局回放数据（双方视角镜像/回合结果自洽/胜轮数等于得分）
+ *  12. 观战好友对局（视角一致/观战占用/终局通知/结束后释放）
  */
 import WebSocket from 'ws';
 
@@ -687,6 +688,80 @@ async function testReplayRounds() {
   sb.terminate();
 }
 
+// ---- 用例 12: 观战好友对局 ----
+async function testSpectate() {
+  const [uA, uB, uC] = await Promise.all([registerUser('SP1'), registerUser('SP2'), registerUser('SP3')]);
+  const sa = new TestSocket('sp-A');
+  const sb = new TestSocket('sp-B');
+  let sc = new TestSocket('sp-C');
+  await Promise.all([sa.connect(), sb.connect(), sc.connect()]);
+  sa.auth(uA.token);
+  sb.auth(uB.token);
+  sc.auth(uC.token);
+  await sleep(200);
+
+  // A、B 匹配成局
+  sa.send('START_MATCHING', { mode: 3 });
+  sb.send('START_MATCHING', { mode: 3 });
+  await Promise.all([sa.waitFor('GAME_START'), sb.waitFor('GAME_START')]);
+
+  // C 观战 A 的对局
+  sc.send('WATCH_FRIEND', { targetId: uA.user.id });
+  const start = await sc.waitFor('SPECTATE_START');
+  assert(start.payload.watched.nickname === uA.user.nickname, '被观战者不正确');
+  assert(start.payload.opponent.nickname === uB.user.nickname, '对手信息不正确');
+
+  // 打一轮：C 应收到同轮的 ROUND_RESULT 且与 A 视角一致
+  autoPlay([sa, sb]);
+  const ra = await sa.waitFor('ROUND_RESULT');
+  const rc = await sc.waitFor('ROUND_RESULT', (m) => m.payload.roundNumber === ra.payload.roundNumber);
+  assert(
+    rc.payload.playerChoice === ra.payload.playerChoice &&
+      rc.payload.opponentChoice === ra.payload.opponentChoice &&
+      rc.payload.result === ra.payload.result &&
+      rc.payload.playerScore === ra.payload.playerScore,
+    `观战视角与玩家视角不一致: A=${JSON.stringify(ra.payload)} C=${JSON.stringify(rc.payload)}`
+  );
+
+  // 观战中 C 不能开新对局（被 currentGameId 占用）
+  sc.send('START_AI_MATCH', { mode: 3 });
+  await sleep(500);
+  assert(!sc.messages.some((m) => m.type === 'GAME_START'), '观战中仍能开始对局');
+
+  // 等对局结束（平局多时会打很多轮），C 收到 SPECTATE_END 且比分与玩家侧一致
+  await Promise.all([
+    sa.waitFor('GAME_OVER', () => true, 45000),
+    sb.waitFor('GAME_OVER', () => true, 45000),
+  ]);
+  const end = await sc.waitFor('SPECTATE_END', () => true, 45000);
+  const overA = sa.messages.find((m) => m.type === 'GAME_OVER');
+  assert(
+    end.payload.watchedScore === overA.payload.finalScore.player &&
+      end.payload.opponentScore === overA.payload.finalScore.opponent,
+    `观战终局比分不一致: ${JSON.stringify(end.payload)} vs ${JSON.stringify(overA.payload.finalScore)}`
+  );
+
+  // 观战结束后 C 恢复自由，可以开 AI 对局
+  sc.send('START_AI_MATCH', { mode: 3 });
+  await sc.waitFor('GAME_START');
+
+  // 观战中途掉线不应对局方受影响：C 重连后再观战 B，B 正常打完
+  sc.terminate();
+  sc = new TestSocket('sp-C2');
+  await sc.connect();
+  sc.auth(uC.token);
+  await sleep(300);
+  sc.send('WATCH_FRIEND', { targetId: uB.user.id });
+  const start2 = await sc.waitFor('SPECTATE_START', () => true, 8000).catch(() => null);
+  if (start2) {
+    // B 可能还在自由对局窗口（几乎不可能，忽略），跳过后续校验
+    sc.terminate();
+  }
+
+  sa.terminate();
+  sb.terminate();
+}
+
 function assert(cond, message) {
   if (!cond) throw new Error(message);
 }
@@ -704,6 +779,7 @@ const cases = [
   ['好友系统与约战', testFriendsAndChallenge],
   ['成就计算', testAchievements],
   ['对局回放数据', testReplayRounds],
+  ['观战好友对局', testSpectate],
 ];
 
 console.log(`冒烟测试开始 -> ws=${WS_URL} api=${API_URL}`);
