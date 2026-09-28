@@ -48,7 +48,18 @@ pm2 save
 pm2 startup
 ```
 
-SQLite 数据默认保存到 `/opt/maozi-rps/server/data/maozi-rps.db`。该目录不能随发布流程删除，建议定期备份数据库文件。
+SQLite 数据默认保存到 `/opt/maozi-rps/server/data/maozi-rps.db`。该目录不能随发布流程删除。
+
+### 数据库备份（强烈建议配置）
+
+```bash
+# 手动备份（在线一致性快照，保留最近 7 份）
+cd /opt/maozi-rps/server
+node scripts/backup-db.mjs data/maozi-rps.db /opt/maozi-rps/backups
+
+# crontab 每天凌晨 3 点自动备份
+# 0 3 * * * cd /opt/maozi-rps/server && node scripts/backup-db.mjs data/maozi-rps.db /opt/maozi-rps/backups >> /var/log/maozi-rps/backup.log 2>&1
+```
 
 ### 3. 部署 Web 前端
 

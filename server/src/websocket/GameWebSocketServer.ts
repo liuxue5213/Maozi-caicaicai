@@ -230,6 +230,8 @@ export class GameWebSocketServer {
     if (client.msgCount > WS_MSG_RATE_LIMIT) {
       return;
     }
+    // 任意有效消息都刷新心跳：活跃玩家不会因 PING 缺失被误判掉线
+    client.lastPing = now;
 
     const { type, payload } = message;
 
@@ -868,22 +870,28 @@ export class GameWebSocketServer {
     }
 
     game.phaseTimer = setTimeout(() => {
-      // AI 自动出拳
-      if (game.isAi && phase === GamePhase.SELECTING && !game.players[1].choice) {
-        game.players[1].choice = this.getAiChoice(game);
-      }
-
-      // 超时未选择随机出拳（固定出石头会被玩家针对挂机）
-      if (phase === GamePhase.SELECTING) {
-        if (!game.players[0].choice) {
-          game.players[0].choice = ALL_CHOICES[Math.floor(Math.random() * ALL_CHOICES.length)];
+      try {
+        // AI 自动出拳
+        if (game.isAi && phase === GamePhase.SELECTING && !game.players[1].choice) {
+          game.players[1].choice = this.getAiChoice(game);
         }
-        if (!game.players[1].choice) {
-          game.players[1].choice = ALL_CHOICES[Math.floor(Math.random() * ALL_CHOICES.length)];
-        }
-      }
 
-      this.advancePhase(gameId);
+        // 超时未选择随机出拳（固定出石头会被玩家针对挂机）
+        if (phase === GamePhase.SELECTING) {
+          if (!game.players[0].choice) {
+            game.players[0].choice = ALL_CHOICES[Math.floor(Math.random() * ALL_CHOICES.length)];
+          }
+          if (!game.players[1].choice) {
+            game.players[1].choice = ALL_CHOICES[Math.floor(Math.random() * ALL_CHOICES.length)];
+          }
+        }
+
+        this.advancePhase(gameId);
+      } catch (err) {
+        // 单局异常只终止该局，不影响服务器上的其他对局
+        console.error(`[Game] 对局 ${gameId} 阶段推进异常，强制终止:`, err);
+        this.abortGame(game, '服务器异常，本局已终止，战绩不受影响');
+      }
     }, duration);
   }
 
@@ -1013,7 +1021,37 @@ export class GameWebSocketServer {
     }
   }
 
+  /** 强制终止单局：通知所有参与者与观战者后清理，保证房间不泄漏 */
+  private abortGame(game: GameRoom, message: string): void {
+    if (game.phaseTimer) clearTimeout(game.phaseTimer);
+    const payload = { error: message };
+    for (const p of game.players) {
+      this.sendToClient(p.ws, { type: ServerMessage.ERROR, payload });
+    }
+    for (const s of game.spectators) {
+      const watcher = this.clients.get(s.clientId);
+      if (watcher) {
+        this.sendToClient(watcher.ws, { type: ServerMessage.ERROR, payload });
+        watcher.currentGameId = null;
+      }
+    }
+    this.cleanupGame(game.id);
+  }
+
   private processGameOver(game: GameRoom): void {
+    try {
+      this.settleGameOver(game);
+    } catch (err) {
+      // 结算异常（如历史遗留数据问题）不应拖垮服务器：记录并至少完成清理
+      console.error(`[Game] 对局 ${game.id} 结算异常，强制清理:`, err);
+      for (const p of game.players) {
+        this.sendToClient(p.ws, { type: ServerMessage.ERROR, payload: { error: '结算异常，本局战绩可能未保存' } });
+      }
+      this.cleanupGame(game.id);
+    }
+  }
+
+  private settleGameOver(game: GameRoom): void {
     const player1Won = game.players[0].score > game.players[1].score;
     const isDraw = game.players[0].score === game.players[1].score;
     const duration = Date.now() - game.startedAt;
@@ -1369,6 +1407,32 @@ export class GameWebSocketServer {
         },
       });
     });
+  }
+
+  /** 停机前通知所有进行中对局与观战者，随后释放全部状态 */
+  shutdownAll(): void {
+    const notify = (ws: WebSocket) => {
+      this.sendToClient(ws, { type: ServerMessage.SERVER_SHUTDOWN, payload: { message: '服务器维护中，请稍后再来' } });
+    };
+    this.games.forEach((game) => {
+      if (game.phaseTimer) clearTimeout(game.phaseTimer);
+      game.players.forEach((p) => notify(p.ws));
+      game.spectators.forEach((s) => {
+        const watcher = this.clients.get(s.clientId);
+        if (watcher) notify(watcher.ws);
+      });
+    });
+    this.clients.forEach((client) => {
+      client.ws.close(1001, 'server shutdown');
+    });
+    this.games.clear();
+    this.userGames.clear();
+    this.matchingQueue.length = 0;
+    this.privateRooms.clear();
+    this.challenges.clear();
+    inGameUsers.clear();
+    this.close();
+    console.log('[WebSocket] 已通知全部对局并释放状态');
   }
 
   close(): void {

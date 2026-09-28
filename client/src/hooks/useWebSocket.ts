@@ -114,6 +114,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       case ServerMessage.SPECTATE_END:
         opts.onSpectateEnd?.(message.payload);
         break;
+      case ServerMessage.SERVER_SHUTDOWN:
+        opts.onError?.(message.payload?.message || '服务器维护中，请稍后再来');
+        break;
       case ServerMessage.ERROR:
         opts.onError?.(message.payload?.error || '未知错误');
         break;

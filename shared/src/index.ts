@@ -164,6 +164,8 @@ export enum ServerMessage {
   // 观战：进入对局 / 对局结束
   SPECTATE_START = 'SPECTATE_START',
   SPECTATE_END = 'SPECTATE_END',
+  // 服务器停机维护（客户端应提示并返回大厅）
+  SERVER_SHUTDOWN = 'SERVER_SHUTDOWN',
   // 心跳
   PONG = 'PONG',
   // 错误

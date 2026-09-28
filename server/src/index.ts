@@ -11,7 +11,8 @@ import { initDatabase } from './db/database';
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server, path: '/ws' });
+// maxPayload 限制单条 WS 消息大小（16KB 足够游戏协议），防止恶意超大帧占用内存
+const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 16 * 1024 });
 
 // CORS 配置：根据环境变量限制来源
 const corsOrigins = process.env.CORS_ORIGINS;
@@ -85,12 +86,29 @@ async function main() {
 
 main();
 
-// 优雅关闭
-process.on('SIGINT', () => {
-  console.log('\n[Server] 正在关闭...');
-  wsServer.close();
+// 优雅关闭：先通知所有对局中的玩家，再关库关服
+async function shutdown(signal: string) {
+  console.log(`\n[${signal}] 正在关闭...`);
+  try {
+    wsServer.shutdownAll();
+  } catch (err) {
+    console.error('[Shutdown] 通知对局失败:', err);
+  }
   server.close(() => {
     console.log('[Server] 已关闭');
     process.exit(0);
   });
+  // 兜底：5 秒后强制退出
+  setTimeout(() => process.exit(0), 5000).unref();
+}
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+// 进程级兜底：记录异常但不退出，避免单个对局异常导致全体玩家掉线
+process.on('uncaughtException', (err) => {
+  console.error('[UncaughtException]', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[UnhandledRejection]', reason);
 });

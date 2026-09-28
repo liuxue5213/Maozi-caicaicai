@@ -339,9 +339,13 @@ export function GameScreen() {
     ws.sendEmoji(emoji);
   };
 
-  /** 私密房间流程出错（房间不存在/已失效等）：提示并返回 */
+  /** 私密房间流程出错（房间不存在/已失效等）：提示并返回；服务器维护则任何阶段都返回 */
   const handleWsError = useCallback(
     (error: string) => {
+      if (/维护/.test(error)) {
+        Alert.alert('服务器维护', error, [{ text: '确定', onPress: () => navigation.goBack() }]);
+        return;
+      }
       if (
         (matchType === 'private' || matchType === 'spectate') &&
         phaseRef.current === GamePhase.WAITING
