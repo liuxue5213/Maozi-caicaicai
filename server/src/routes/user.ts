@@ -134,6 +134,14 @@ userRouter.get('/history', (req: any, res: Response) => {
     const won = isDraw ? false : isPlayer1 ? player1Won : !player1Won;
     const opponent = opponentId ? db.findUserById(opponentId) : null;
 
+    // 回放轮次转为对局者视角
+    const invert = (result: string) => (result === 'WIN' ? 'LOSE' : result === 'LOSE' ? 'WIN' : 'DRAW');
+    const rounds = r.rounds.map((rd) => ({
+      player: isPlayer1 ? rd.p1 : rd.p2,
+      opponent: isPlayer1 ? rd.p2 : rd.p1,
+      result: isPlayer1 ? rd.r : invert(rd.r),
+    }));
+
     return {
       id: r.id,
       timestamp: r.timestamp,
@@ -146,6 +154,7 @@ userRouter.get('/history', (req: any, res: Response) => {
       won,
       roundsCount: r.roundsCount,
       durationMs: r.durationMs,
+      rounds,
     };
   });
 

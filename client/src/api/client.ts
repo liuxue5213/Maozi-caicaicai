@@ -132,7 +132,7 @@ export const api = {
       };
     }>(`/leaderboard/me?type=${type}`),
 
-  // 对局历史（按玩家视角：对手、比分、胜负）
+  // 对局历史（按玩家视角：对手、比分、胜负，含每轮回放）
   getHistory: (limit = 20) =>
     apiRequest<
       Array<{
@@ -147,6 +147,7 @@ export const api = {
         won: boolean;
         roundsCount: number;
         durationMs: number;
+        rounds: Array<{ player: string; opponent: string; result: 'WIN' | 'LOSE' | 'DRAW' }>;
       }>
     >(`/user/history?limit=${limit}`),
 

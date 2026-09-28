@@ -29,7 +29,11 @@ interface HistoryItem {
   opponentScore: number;
   isDraw: boolean;
   won: boolean;
+  rounds: Array<{ player: string; opponent: string; result: 'WIN' | 'LOSE' | 'DRAW' }>;
 }
+
+const CHOICE_EMOJI: Record<string, string> = { ROCK: '✊', SCISSORS: '✌️', PAPER: '✋' };
+const CHOICE_TEXT: Record<string, string> = { ROCK: '石头', SCISSORS: '剪刀', PAPER: '布' };
 
 interface AchievementItem {
   id: string;
@@ -57,6 +61,9 @@ export function ProfileScreen() {
   const [newNickname, setNewNickname] = useState(user?.nickname || '');
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [achievements, setAchievements] = useState<AchievementItem[]>([]);
+  /** 正在回放的对局与当前轮下标 */
+  const [replayItem, setReplayItem] = useState<HistoryItem | null>(null);
+  const [replayIndex, setReplayIndex] = useState(0);
   const [soundOn, setSoundOn] = useState(!isSoundMuted());
   const [avatarModal, setAvatarModal] = useState(false);
   const [savingAvatar, setSavingAvatar] = useState(false);
@@ -276,7 +283,16 @@ export function ProfileScreen() {
           <Text style={[styles.historyEmpty, { color: t.textMuted }]}>还没有对局记录，快去打一局吧！</Text>
         ) : (
           history.map((item) => (
-            <View key={item.id} style={[styles.historyItem, { borderBottomColor: t.border }]}>
+            <TouchableOpacity
+              key={item.id}
+              style={[styles.historyItem, { borderBottomColor: t.border }]}
+              activeOpacity={0.7}
+              disabled={item.rounds.length === 0}
+              onPress={() => {
+                setReplayItem(item);
+                setReplayIndex(item.rounds.length - 1);
+              }}
+            >
               <View
                 style={[
                   styles.resultBadge,
@@ -308,6 +324,7 @@ export function ProfileScreen() {
                 <Text style={[styles.historyMeta, { color: t.textSecondary }]}>
                   {GAME_MODE_LABELS[item.mode as keyof typeof GAME_MODE_LABELS] ?? '对局'} ·{' '}
                   {formatTime(item.timestamp)}
+                  {item.rounds.length > 0 ? ' · 点击回放' : ''}
                 </Text>
               </View>
               <Text
@@ -318,7 +335,7 @@ export function ProfileScreen() {
               >
                 {item.myScore} : {item.opponentScore}
               </Text>
-            </View>
+            </TouchableOpacity>
           ))
         )}
       </View>
@@ -400,6 +417,97 @@ export function ProfileScreen() {
               onPress={() => setAvatarModal(false)}
             >
               <Text style={[styles.avatarModalCancelText, { color: t.textMuted }]}>取消</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 对局回放弹窗 */}
+      <Modal
+        visible={replayItem !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setReplayItem(null)}
+      >
+        <View style={styles.replayOverlay}>
+          <View style={[styles.replayCard, { backgroundColor: t.card }]}>
+            <Text style={[styles.replayTitle, { color: t.text }]} numberOfLines={1}>
+              vs {replayItem?.opponentNickname || ''}
+              {replayItem?.isAi ? '（AI）' : ''}
+            </Text>
+            <Text style={[styles.replayScore, { color: t.textSecondary }]}>
+              终局比分 {replayItem?.myScore} : {replayItem?.opponentScore}
+            </Text>
+
+            {replayItem && replayItem.rounds.length > 0 && (
+              <>
+                <Text style={[styles.replayRoundLabel, { color: t.textMuted }]}>
+                  第 {replayIndex + 1} / {replayItem.rounds.length} 轮
+                </Text>
+                <View style={styles.replayRow}>
+                  <View style={styles.replaySide}>
+                    <View style={[styles.replayCircle, { backgroundColor: t.background, borderColor: t.border }]}>
+                      <Text style={styles.replayEmoji}>
+                        {CHOICE_EMOJI[replayItem.rounds[replayIndex].player] || '❓'}
+                      </Text>
+                    </View>
+                    <Text style={[styles.replayName, { color: t.text }]}>
+                      我 · {CHOICE_TEXT[replayItem.rounds[replayIndex].player] || ''}
+                    </Text>
+                  </View>
+                  <Text style={[styles.replayVs, { color: t.textMuted }]}>VS</Text>
+                  <View style={styles.replaySide}>
+                    <View style={[styles.replayCircle, { backgroundColor: t.background, borderColor: t.border }]}>
+                      <Text style={styles.replayEmoji}>
+                        {CHOICE_EMOJI[replayItem.rounds[replayIndex].opponent] || '❓'}
+                      </Text>
+                    </View>
+                    <Text style={[styles.replayName, { color: t.text }]}>
+                      {replayItem.opponentNickname} · {CHOICE_TEXT[replayItem.rounds[replayIndex].opponent] || ''}
+                    </Text>
+                  </View>
+                </View>
+                <Text
+                  style={[
+                    styles.replayResult,
+                    {
+                      color:
+                        replayItem.rounds[replayIndex].result === 'DRAW'
+                          ? t.warning
+                          : replayItem.rounds[replayIndex].result === 'WIN'
+                            ? t.success
+                            : t.danger,
+                    },
+                  ]}
+                >
+                  {replayItem.rounds[replayIndex].result === 'DRAW'
+                    ? '平局'
+                    : replayItem.rounds[replayIndex].result === 'WIN'
+                      ? '这一局你赢了'
+                      : '这一局你输了'}
+                </Text>
+
+                <View style={styles.replayControls}>
+                  <TouchableOpacity
+                    style={[styles.replayNavButton, { borderColor: t.border }, replayIndex === 0 && { opacity: 0.4 }]}
+                    disabled={replayIndex === 0}
+                    onPress={() => setReplayIndex((i) => Math.max(0, i - 1))}
+                  >
+                    <Text style={[styles.replayNavText, { color: t.textSecondary }]}>← 上一轮</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.replayNavButton, { borderColor: t.border }, replayIndex === replayItem.rounds.length - 1 && { opacity: 0.4 }]}
+                    disabled={replayIndex === replayItem.rounds.length - 1}
+                    onPress={() => setReplayIndex((i) => Math.min(replayItem.rounds.length - 1, i + 1))}
+                  >
+                    <Text style={[styles.replayNavText, { color: t.textSecondary }]}>下一轮 →</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+
+            <TouchableOpacity style={styles.avatarModalCancel} onPress={() => setReplayItem(null)}>
+              <Text style={[styles.avatarModalCancelText, { color: t.textMuted }]}>关闭</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -591,6 +699,80 @@ const styles = StyleSheet.create({
   },
   appearanceOptionText: {
     fontSize: 12,
+  },
+  replayOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 28,
+  },
+  replayCard: {
+    width: '100%',
+    maxWidth: 340,
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+  },
+  replayTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  replayScore: {
+    fontSize: 13,
+    marginTop: 4,
+  },
+  replayRoundLabel: {
+    fontSize: 13,
+    marginTop: 14,
+  },
+  replayRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 20,
+    marginTop: 12,
+  },
+  replaySide: {
+    alignItems: 'center',
+    width: 110,
+  },
+  replayCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  replayEmoji: {
+    fontSize: 34,
+  },
+  replayName: {
+    fontSize: 12,
+    marginTop: 8,
+  },
+  replayVs: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  replayResult: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginTop: 12,
+  },
+  replayControls: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
+  },
+  replayNavButton: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 18,
+  },
+  replayNavText: {
+    fontSize: 14,
   },
   nickname: {
     color: '#333',

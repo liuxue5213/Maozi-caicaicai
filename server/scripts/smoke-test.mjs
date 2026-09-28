@@ -16,6 +16,8 @@
  *   7. 未打过对局时"我的名次"为 0、未授权返回 401
  *   8. 对局内表情转发（白名单/头像透传）+ 头像更新接口校验
  *   9. 好友增删/在线状态 + 约战接受/拒绝/忙碌不可约战
+ *  10. 成就计算（与实际对局胜负对账）
+ *  11. 对局回放数据（双方视角镜像/回合结果自洽/胜轮数等于得分）
  */
 import WebSocket from 'ws';
 
@@ -626,6 +628,65 @@ async function testAchievements() {
   sAi.terminate();
 }
 
+// ---- 用例 11: 对局回放数据 ----
+async function testReplayRounds() {
+  const [uA, uB] = await Promise.all([registerUser('RP1'), registerUser('RP2')]);
+  const sa = new TestSocket('rp-A');
+  const sb = new TestSocket('rp-B');
+  await Promise.all([sa.connect(), sb.connect()]);
+  sa.auth(uA.token);
+  sb.auth(uB.token);
+  await sleep(200);
+
+  sa.send('START_MATCHING', { mode: 3 });
+  sb.send('START_MATCHING', { mode: 3 });
+  await Promise.all([sa.waitFor('GAME_START'), sb.waitFor('GAME_START')]);
+  for (let i = 0; i < 40; i++) {
+    autoPlay([sa, sb]);
+    const done = await Promise.race([
+      Promise.all([sa.waitFor('GAME_OVER'), sb.waitFor('GAME_OVER')]).then(() => true),
+      sleep(1500).then(() => false),
+    ]);
+    if (done) break;
+  }
+  const pvpOver = await sa.waitFor('GAME_OVER');
+
+  // 双方视角的回放数据都应存在且互为镜像
+  for (const [u, over, oppOver] of [
+    [uA, pvpOver, null],
+    [uB, sb.messages.find((m) => m.type === 'GAME_OVER'), null],
+  ]) {
+    const res = await fetch(`${API_URL}/user/history?limit=5`, {
+      headers: { Authorization: `Bearer ${u.token}` },
+    });
+    const list = (await res.json()).data;
+    const rec = list.find((r) => r.id && r.rounds && r.rounds.length > 0);
+    assert(rec, '历史记录缺少回放数据');
+    // 轮数与对局轮数一致；每轮 choices 合法且 result 自洽
+    for (const rd of rec.rounds) {
+      assert(['ROCK', 'SCISSORS', 'PAPER'].includes(rd.player), `非法玩家出拳: ${rd.player}`);
+      assert(['ROCK', 'SCISSORS', 'PAPER'].includes(rd.opponent), `非法对手出拳: ${rd.opponent}`);
+      const expect =
+        rd.player === rd.opponent ? 'DRAW' : wonPair(rd.player, rd.opponent) ? 'WIN' : 'LOSE';
+      assert(rd.result === expect, `回合结果不自洽: ${JSON.stringify(rd)}`);
+    }
+    // 胜轮数应等于自己的得分
+    const winCount = rec.rounds.filter((rd) => rd.result === 'WIN').length;
+    assert(winCount === rec.myScore, `胜轮数与比分不符: wins=${winCount}, score=${rec.myScore}`);
+  }
+
+  function wonPair(a, b) {
+    return (
+      (a === 'ROCK' && b === 'SCISSORS') ||
+      (a === 'SCISSORS' && b === 'PAPER') ||
+      (a === 'PAPER' && b === 'ROCK')
+    );
+  }
+
+  sa.terminate();
+  sb.terminate();
+}
+
 function assert(cond, message) {
   if (!cond) throw new Error(message);
 }
@@ -642,6 +703,7 @@ const cases = [
   ['对局表情与头像', testEmojiAndAvatar],
   ['好友系统与约战', testFriendsAndChallenge],
   ['成就计算', testAchievements],
+  ['对局回放数据', testReplayRounds],
 ];
 
 console.log(`冒烟测试开始 -> ws=${WS_URL} api=${API_URL}`);

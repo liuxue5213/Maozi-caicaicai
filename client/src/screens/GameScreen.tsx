@@ -699,8 +699,18 @@ export function GameScreen() {
               </View>
             </Animated.View>
             <View style={styles.settlementNames}>
-              <Text style={[styles.playerName, { color: t.textSecondary }]}>{user?.nickname || '我'}</Text>
-              <Text style={[styles.playerName, { color: t.textSecondary }]}>{opponentNickname || '对手'}</Text>
+              <View style={styles.revealSide}>
+                <Text style={[styles.playerName, { color: t.textSecondary }]}>{user?.nickname || '我'}</Text>
+                <Text style={[styles.revealChoiceText, { color: t.textMuted }]}>
+                  {isPump ? '蓄力中' : getChoiceText(playerChoice)}
+                </Text>
+              </View>
+              <View style={styles.revealSide}>
+                <Text style={[styles.playerName, { color: t.textSecondary }]}>{opponentNickname || '对手'}</Text>
+                <Text style={[styles.revealChoiceText, { color: t.textMuted }]}>
+                  {isPump ? '蓄力中' : getChoiceText(opponentChoice)}
+                </Text>
+              </View>
             </View>
             {isPump && <Text style={[styles.pumpText, { color: t.primary }]}>{PUMP_BEATS[pumpBeat]}！</Text>}
             {!isPump && lastResult === RoundResult.DRAW && <Text style={[styles.phaseText, { color: t.text }]}>平局</Text>}
@@ -1194,6 +1204,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     width: 260,
     marginTop: 8,
+  },
+  revealSide: {
+    alignItems: 'center',
+  },
+  revealChoiceText: {
+    fontSize: 13,
+    marginTop: 2,
   },
   settlementRow: {
     flexDirection: 'row',

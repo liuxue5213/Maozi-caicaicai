@@ -4,7 +4,7 @@ import path from 'path';
 
 export interface DbUser { id: string; username: string; passwordHash: string; nickname: string; avatar: string | null; createdAt: number; }
 export interface DbStats { userId: string; totalGames: number; wins: number; losses: number; draws: number; currentWinStreak: number; bestWinStreak: number; rank: number; }
-export interface DbGameRecord { id: string; timestamp: number; mode: number; player1Id: string; player2Id: string | null; player1Won: boolean; scorePlayer1: number; scorePlayer2: number; roundsCount: number; durationMs: number; }
+export interface DbGameRecord { id: string; timestamp: number; mode: number; player1Id: string; player2Id: string | null; player1Won: boolean; scorePlayer1: number; scorePlayer2: number; roundsCount: number; durationMs: number; /** 每轮回放（player1 视角），旧记录为空 */ rounds: Array<{ p1: string; p2: string; r: string }>; }
 
 let database: Database.Database | null = null;
 const getDatabase = (): Database.Database => {
@@ -23,7 +23,13 @@ function toStats(row: Record<string, unknown> | undefined): DbStats | null {
 }
 
 function toGameRecord(row: Record<string, unknown>): DbGameRecord {
-  return { id: row.id as string, timestamp: row.timestamp as number, mode: row.mode as number, player1Id: row.player1_id as string, player2Id: row.player2_id as string | null, player1Won: Boolean(row.player1_won), scorePlayer1: row.score_player1 as number, scorePlayer2: row.score_player2 as number, roundsCount: row.rounds_count as number, durationMs: row.duration_ms as number };
+  let rounds: Array<{ p1: string; p2: string; r: string }> = [];
+  try {
+    if (typeof row.rounds === 'string' && row.rounds) rounds = JSON.parse(row.rounds);
+  } catch {
+    rounds = [];
+  }
+  return { id: row.id as string, timestamp: row.timestamp as number, mode: row.mode as number, player1Id: row.player1_id as string, player2Id: row.player2_id as string | null, player1Won: Boolean(row.player1_won), scorePlayer1: row.score_player1 as number, scorePlayer2: row.score_player2 as number, roundsCount: row.rounds_count as number, durationMs: row.duration_ms as number, rounds };
 }
 
 export const db = {
@@ -177,7 +183,7 @@ export const db = {
     return rows.map((row) => ({ user: toUser(row)!, stats: toStats(row)! }));
   },
   addGameRecord(record: DbGameRecord): void {
-    getDatabase().prepare('INSERT INTO game_records (id, timestamp, mode, player1_id, player2_id, player1_won, score_player1, score_player2, rounds_count, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(record.id, record.timestamp, record.mode, record.player1Id, record.player2Id, Number(record.player1Won), record.scorePlayer1, record.scorePlayer2, record.roundsCount, record.durationMs);
+    getDatabase().prepare('INSERT INTO game_records (id, timestamp, mode, player1_id, player2_id, player1_won, score_player1, score_player2, rounds_count, duration_ms, rounds) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(record.id, record.timestamp, record.mode, record.player1Id, record.player2Id, Number(record.player1Won), record.scorePlayer1, record.scorePlayer2, record.roundsCount, record.durationMs, JSON.stringify(record.rounds ?? []));
   },
   getUserGameRecords(userId: string, limit = 50): DbGameRecord[] {
     const validLimit = Math.min(Math.max(limit, 1), 100);
@@ -205,5 +211,11 @@ export async function initDatabase(): Promise<void> {
     CREATE TABLE IF NOT EXISTS friends (user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, friend_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, created_at INTEGER NOT NULL, PRIMARY KEY (user_id, friend_id));
     CREATE INDEX IF NOT EXISTS idx_friends_friend ON friends(friend_id);
   `);
+  // 旧库迁移：game_records 补充 rounds 回放列
+  const cols = (getDatabase().prepare('PRAGMA table_info(game_records)').all() as Array<{ name: string }>).map((c) => c.name);
+  if (!cols.includes('rounds')) {
+    getDatabase().exec('ALTER TABLE game_records ADD COLUMN rounds TEXT');
+    console.log('[Database] game_records 已迁移：新增 rounds 回放列');
+  }
   console.log(`[Database] SQLite 已就绪: ${databasePath}`);
 }

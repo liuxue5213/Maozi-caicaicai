@@ -125,6 +125,8 @@ interface GameRoom {
   suddenDeath: boolean;
   /** 突然死亡回合已分出胜负（由结算阶段标记） */
   suddenDeathDecided: boolean;
+  /** 每轮出拳记录（player1 视角），终局写入战绩用于回放 */
+  roundsHistory: Array<{ p1: GameChoice; p2: GameChoice; result: RoundResult }>;
 }
 
 export class GameWebSocketServer {
@@ -704,6 +706,7 @@ export class GameWebSocketServer {
       consecutiveDraws: 0,
       suddenDeath: false,
       suddenDeathDecided: false,
+      roundsHistory: [],
     };
 
     this.games.set(gameId, game);
@@ -859,6 +862,9 @@ export class GameWebSocketServer {
     if (result === RoundResult.WIN) game.players[0].score++;
     else if (result === RoundResult.LOSE) game.players[1].score++;
 
+    // 记录本轮回放（player1 视角）
+    game.roundsHistory.push({ p1: p1Choice, p2: p2Choice, result });
+
     // 广播结果（玩家1视角）
     game.players[0].ws.send(
       JSON.stringify({
@@ -927,6 +933,7 @@ export class GameWebSocketServer {
       scorePlayer2: game.players[1].score,
       roundsCount: game.roundNumber,
       durationMs: duration,
+      rounds: game.roundsHistory.map((rd) => ({ p1: rd.p1 as string, p2: rd.p2 as string, r: rd.result as string })),
     });
 
     const gameCountTitle = getGameCountTitle(player1Stats.totalGames);

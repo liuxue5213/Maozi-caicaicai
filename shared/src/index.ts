@@ -80,6 +80,13 @@ export interface LeaderboardEntry {
   title: TitleInfo;
 }
 
+/** 对局回放的单轮记录（从对局者视角） */
+export interface ReplayRound {
+  player: GameChoice;
+  opponent: GameChoice;
+  result: RoundResult;
+}
+
 /** 当前用户在指定榜单中的名次信息（可能不在榜单前列） */
 export interface MyRankInfo {
   type: 'wins' | 'streak' | 'rank';
