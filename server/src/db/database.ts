@@ -118,6 +118,43 @@ export const db = {
   countRankedPlayers(): number {
     return (getDatabase().prepare('SELECT COUNT(*) AS count FROM user_stats WHERE total_games > 0').get() as { count: number }).count;
   },
+
+  // ---- 好友 ----
+
+  addFriend(userId: string, friendId: string): boolean {
+    const result = getDatabase()
+      .prepare('INSERT OR IGNORE INTO friends (user_id, friend_id, created_at) VALUES (?, ?, ?)')
+      .run(userId, friendId, Date.now());
+    return result.changes > 0;
+  },
+
+  removeFriend(userId: string, friendId: string): boolean {
+    const result = getDatabase()
+      .prepare('DELETE FROM friends WHERE user_id = ? AND friend_id = ?')
+      .run(userId, friendId);
+    return result.changes > 0;
+  },
+
+  isFriend(userId: string, friendId: string): boolean {
+    return !!getDatabase()
+      .prepare('SELECT 1 FROM friends WHERE user_id = ? AND friend_id = ?')
+      .get(userId, friendId);
+  },
+
+  /** 好友列表（含段位分；在线状态由调用方根据 onlineUsers 计算） */
+  getFriends(userId: string): Array<{ user: DbUser; rank: number }> {
+    const rows = getDatabase()
+      .prepare(
+        `SELECT u.*, COALESCE(s.rank, 1000) AS rank
+         FROM friends f
+         JOIN users u ON u.id = f.friend_id
+         LEFT JOIN user_stats s ON s.user_id = u.id
+         WHERE f.user_id = ?
+         ORDER BY f.created_at ASC`
+      )
+      .all(userId) as Record<string, unknown>[];
+    return rows.map((row) => ({ user: toUser(row)!, rank: row.rank as number }));
+  },
   getLeaderboardByWins(limit = 100): Array<{ user: DbUser; stats: DbStats }> {
     const rows = getDatabase().prepare('SELECT u.*, s.* FROM user_stats s JOIN users u ON u.id = s.user_id WHERE s.total_games > 0 ORDER BY s.wins DESC, s.rank DESC LIMIT ?').all(limit) as Record<string, unknown>[];
     return rows.map((row) => ({ user: toUser(row)!, stats: toStats(row)! }));
@@ -156,6 +193,8 @@ export async function initDatabase(): Promise<void> {
     CREATE TABLE IF NOT EXISTS game_records (id TEXT PRIMARY KEY, timestamp INTEGER NOT NULL, mode INTEGER NOT NULL, player1_id TEXT NOT NULL REFERENCES users(id), player2_id TEXT REFERENCES users(id), player1_won INTEGER NOT NULL, score_player1 INTEGER NOT NULL, score_player2 INTEGER NOT NULL, rounds_count INTEGER NOT NULL, duration_ms INTEGER NOT NULL);
     CREATE INDEX IF NOT EXISTS idx_game_records_player1 ON game_records(player1_id, timestamp DESC);
     CREATE INDEX IF NOT EXISTS idx_game_records_player2 ON game_records(player2_id, timestamp DESC);
+    CREATE TABLE IF NOT EXISTS friends (user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, friend_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, created_at INTEGER NOT NULL, PRIMARY KEY (user_id, friend_id));
+    CREATE INDEX IF NOT EXISTS idx_friends_friend ON friends(friend_id);
   `);
   console.log(`[Database] SQLite 已就绪: ${databasePath}`);
 }

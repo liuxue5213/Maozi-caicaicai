@@ -15,6 +15,7 @@
  *   6. 私密房间（邀请码）：建房/入房/开局/一次性校验 + 我的名次接口
  *   7. 未打过对局时"我的名次"为 0、未授权返回 401
  *   8. 对局内表情转发（白名单/头像透传）+ 头像更新接口校验
+ *   9. 好友增删/在线状态 + 约战接受/拒绝/忙碌不可约战
  */
 import WebSocket from 'ws';
 
@@ -481,6 +482,79 @@ async function testEmojiAndAvatar() {
   sb.terminate();
 }
 
+// ---- 用例 9: 好友系统 + 约战全流程 ----
+async function testFriendsAndChallenge() {
+  const [uA, uB, uC] = await Promise.all([registerUser('FR1'), registerUser('FR2'), registerUser('FR3')]);
+  const authHdr = (t) => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${t}` });
+
+  // 添加好友：成功 / 重复 / 自加 / 不存在
+  const addRes = await fetch(`${API_URL}/user/friends`, { method: 'POST', headers: authHdr(uA.token), body: JSON.stringify({ username: uB.user.username }) });
+  const addBody = await addRes.json();
+  assert(addBody.success && addBody.data.id === uB.user.id, '添加好友失败');
+  const dupRes = await fetch(`${API_URL}/user/friends`, { method: 'POST', headers: authHdr(uA.token), body: JSON.stringify({ username: uB.user.username }) });
+  assert(dupRes.status === 400, '重复添加未拒绝');
+  const selfRes = await fetch(`${API_URL}/user/friends`, { method: 'POST', headers: authHdr(uA.token), body: JSON.stringify({ username: uA.user.username }) });
+  assert(selfRes.status === 400, '添加自己未拒绝');
+  const ghostRes = await fetch(`${API_URL}/user/friends`, { method: 'POST', headers: authHdr(uA.token), body: JSON.stringify({ username: 'no_such_user_xx' }) });
+  assert(ghostRes.status === 404, '不存在的用户未被拒绝');
+
+  const sa = new TestSocket('fr-A');
+  const sb = new TestSocket('fr-B');
+  const sc = new TestSocket('fr-C');
+  await Promise.all([sa.connect(), sb.connect(), sc.connect()]);
+  sa.auth(uA.token);
+  sb.auth(uB.token);
+  sc.auth(uC.token);
+  await sleep(300);
+
+  // 好友列表带在线状态
+  const listRes = await fetch(`${API_URL}/user/friends`, { headers: authHdr(uA.token) });
+  const list = (await listRes.json()).data;
+  const friendB = list.find((f) => f.id === uB.user.id);
+  assert(friendB && friendB.online === true, `好友在线状态异常: ${JSON.stringify(friendB)}`);
+
+  // A 约战 B，B 接受，双方开局
+  sa.send('CHALLENGE', { targetId: uB.user.id, mode: 3 });
+  const invite = await sb.waitFor('CHALLENGE_RECEIVED');
+  assert(invite.payload.from.id === uA.user.id, '约战来源不正确');
+  assert(invite.payload.mode === 3, '约战模式不正确');
+  sb.send('CHALLENGE_RESPONSE', { challengeId: invite.payload.challengeId, accept: true });
+  const [startA, startB] = await Promise.all([sa.waitFor('GAME_START'), sb.waitFor('GAME_START')]);
+  assert(startA.payload.opponent?.nickname === uB.user.nickname, 'A 看到的对手不正确');
+  assert(startB.payload.opponent?.nickname === uA.user.nickname, 'B 看到的对手不正确');
+
+  // 打一轮校验对称性
+  autoPlay([sa, sb]);
+  const ra = await sa.waitFor('ROUND_RESULT');
+  await sb.waitFor('ROUND_RESULT', (m) => m.payload.roundNumber === ra.payload.roundNumber);
+
+  // B 离线，当前对局会以判负/自然打完收尾；等 A 收到 GAME_OVER 后再探测
+  sb.terminate();
+  await sa.waitFor('GAME_OVER', () => true, 30000);
+  await sleep(400);
+  sa.send('CHALLENGE', { targetId: uB.user.id, mode: 3 });
+  const busy = await sa.waitFor('CHALLENGE_DECLINED');
+  assert(busy.payload.reason === 'unavailable', `离线时应返回 unavailable: ${busy.payload.reason}`);
+
+  // C 拒绝 A 的约战（用基线索引避免命中上一步的旧 CHALLENGE_DECLINED）
+  const declineBase = sa.messages.length;
+  sa.send('CHALLENGE', { targetId: uC.user.id, mode: 3 });
+  const inviteC = await sc.waitFor('CHALLENGE_RECEIVED');
+  sc.send('CHALLENGE_RESPONSE', { challengeId: inviteC.payload.challengeId, accept: false });
+  const declined = await sa.waitFor('CHALLENGE_DECLINED', (m) => sa.messages.indexOf(m) >= declineBase);
+  assert(declined.payload.reason === 'declined', `拒绝应返回 declined: ${declined.payload.reason}`);
+
+  // 删除好友
+  const delRes = await fetch(`${API_URL}/user/friends/${uB.user.id}`, { method: 'DELETE', headers: authHdr(uA.token) });
+  assert((await delRes.json()).success, '删除好友失败');
+  const list2 = (await (await fetch(`${API_URL}/user/friends`, { headers: authHdr(uA.token) })).json()).data;
+  assert(list2.length === 0, '删除后好友列表应为空');
+
+  sa.terminate();
+  sb.terminate();
+  sc.terminate();
+}
+
 function assert(cond, message) {
   if (!cond) throw new Error(message);
 }
@@ -495,6 +569,7 @@ const cases = [
   ['私密房间（邀请码）全流程', testPrivateRoom],
   ['我的名次接口', testMyRankNoGames],
   ['对局表情与头像', testEmojiAndAvatar],
+  ['好友系统与约战', testFriendsAndChallenge],
 ];
 
 console.log(`冒烟测试开始 -> ws=${WS_URL} api=${API_URL}`);

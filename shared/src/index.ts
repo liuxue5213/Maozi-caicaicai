@@ -117,6 +117,9 @@ export enum ClientMessage {
   JOIN_PRIVATE_ROOM = 'JOIN_PRIVATE_ROOM',
   // 对局内快捷表情
   SEND_EMOJI = 'SEND_EMOJI',
+  // 好友约战
+  CHALLENGE = 'CHALLENGE',
+  CHALLENGE_RESPONSE = 'CHALLENGE_RESPONSE',
   // 心跳
   PING = 'PING',
   // 重连
@@ -146,6 +149,9 @@ export enum ServerMessage {
   PRIVATE_ROOM_JOINED = 'PRIVATE_ROOM_JOINED',
   // 对手发来快捷表情（服务器 -> 对局另一方）
   EMOJI_RECEIVED = 'EMOJI_RECEIVED',
+  // 好友约战：收到邀请 / 发起方收到拒绝或超时
+  CHALLENGE_RECEIVED = 'CHALLENGE_RECEIVED',
+  CHALLENGE_DECLINED = 'CHALLENGE_DECLINED',
   // 心跳
   PONG = 'PONG',
   // 错误
@@ -186,6 +192,38 @@ export interface SendEmojiPayload {
 
 export interface EmojiReceivedPayload {
   emoji: string;
+}
+
+export interface ChallengePayload {
+  targetId: string;
+  mode?: GameMode;
+}
+
+export interface ChallengeResponsePayload {
+  challengeId: string;
+  accept: boolean;
+}
+
+export interface ChallengeReceivedPayload {
+  challengeId: string;
+  from: { id: string; nickname: string; avatar?: string | null };
+  mode: GameMode;
+}
+
+export type ChallengeDeclinedReason = 'declined' | 'timeout' | 'unavailable';
+
+export interface ChallengeDeclinedPayload {
+  reason: ChallengeDeclinedReason;
+}
+
+/** 好友列表项（含在线状态） */
+export interface FriendInfo {
+  id: string;
+  username: string;
+  nickname: string;
+  avatar: string | null;
+  rank: number;
+  online: boolean;
 }
 
 export interface MakeChoicePayload {

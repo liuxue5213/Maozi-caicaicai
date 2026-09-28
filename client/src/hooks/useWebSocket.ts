@@ -25,6 +25,10 @@ interface UseWebSocketOptions {
   onPrivateRoomJoined?: (payload: any) => void;
   /** 对手发来快捷表情 */
   onEmojiReceived?: (payload: any) => void;
+  /** 收到好友约战邀请 */
+  onChallengeReceived?: (payload: any) => void;
+  /** 自己发起的约战被拒绝/超时/对方不可用 */
+  onChallengeDeclined?: (payload: any) => void;
   onAuthResult?: (payload: any) => void;
   onError?: (error: string) => void;
 }
@@ -94,6 +98,12 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         break;
       case ServerMessage.EMOJI_RECEIVED:
         opts.onEmojiReceived?.(message.payload);
+        break;
+      case ServerMessage.CHALLENGE_RECEIVED:
+        opts.onChallengeReceived?.(message.payload);
+        break;
+      case ServerMessage.CHALLENGE_DECLINED:
+        opts.onChallengeDeclined?.(message.payload);
         break;
       case ServerMessage.ERROR:
         opts.onError?.(message.payload?.error || '未知错误');
@@ -256,6 +266,20 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     [sendMessage]
   );
 
+  const challenge = useCallback(
+    (targetId: string, mode: GameMode) => {
+      sendMessage(ClientMessage.CHALLENGE, { targetId, mode });
+    },
+    [sendMessage]
+  );
+
+  const challengeResponse = useCallback(
+    (challengeId: string, accept: boolean) => {
+      sendMessage(ClientMessage.CHALLENGE_RESPONSE, { challengeId, accept });
+    },
+    [sendMessage]
+  );
+
   // 清理
   useEffect(() => {
     return () => {
@@ -277,5 +301,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     createPrivateRoom,
     joinPrivateRoom,
     sendEmoji,
+    challenge,
+    challengeResponse,
   };
 }

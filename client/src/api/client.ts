@@ -151,4 +151,34 @@ export const api = {
     >(`/user/history?limit=${limit}`),
 
   getOnlineCount: () => apiRequest<{ count: number }>('/leaderboard/online-count'),
+
+  // ---- 好友 ----
+
+  getFriends: () =>
+    apiRequest<
+      Array<{
+        id: string;
+        username: string;
+        nickname: string;
+        avatar: string | null;
+        rank: number;
+        online: boolean;
+      }>
+    >('/user/friends'),
+
+  addFriend: (username: string) =>
+    apiRequest<{
+      id: string;
+      username: string;
+      nickname: string;
+      avatar: string | null;
+      rank: number;
+      online: boolean;
+    }>('/user/friends', {
+      method: 'POST',
+      body: { username },
+    }),
+
+  removeFriend: (friendId: string) =>
+    apiRequest(`/user/friends/${friendId}`, { method: 'DELETE' }),
 };

@@ -4,6 +4,7 @@ import { Text, View, StyleSheet } from 'react-native';
 import { HomeScreen } from '../screens/HomeScreen';
 import { LeaderboardScreen } from '../screens/LeaderboardScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
+import { FriendsScreen } from '../screens/FriendsScreen';
 
 const Tab = createBottomTabNavigator();
 
@@ -35,6 +36,14 @@ export function MainTabNavigator() {
         options={{
           tabBarLabel: '排行榜',
           tabBarIcon: ({ focused }) => <TabIcon name="🏆" focused={focused} />,
+        }}
+      />
+      <Tab.Screen
+        name="Friends"
+        component={FriendsScreen}
+        options={{
+          tabBarLabel: '好友',
+          tabBarIcon: ({ focused }) => <TabIcon name="👥" focused={focused} />,
         }}
       />
       <Tab.Screen

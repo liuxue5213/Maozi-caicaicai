@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
-import { db } from '../db/database';
+import { db, onlineUsers } from '../db/database';
 import { authMiddleware } from '../middleware/auth';
-import { AVATAR_PRESETS } from '@maozi/shared';
+import { AVATAR_PRESETS, FriendInfo } from '@maozi/shared';
 
 export const userRouter = Router();
 
@@ -54,6 +54,57 @@ userRouter.put('/avatar', (req: any, res: Response) => {
 
   db.updateUserAvatar(req.userId!, avatar);
   res.json({ success: true, data: { avatar } });
+});
+
+// ---- 好友 ----
+
+// 好友列表（带在线状态）
+userRouter.get('/friends', (req: any, res: Response) => {
+  const friends: FriendInfo[] = db.getFriends(req.userId!).map(({ user, rank }) => ({
+    id: user.id,
+    username: user.username,
+    nickname: user.nickname,
+    avatar: user.avatar,
+    rank,
+    online: onlineUsers.has(user.id),
+  }));
+  res.json({ success: true, data: friends });
+});
+
+// 按用户名添加好友
+userRouter.post('/friends', (req: any, res: Response) => {
+  const username = String(req.body?.username || '').trim();
+  if (!username) {
+    res.status(400).json({ success: false, error: '请输入对方用户名' });
+    return;
+  }
+  const target = db.findUserByUsername(username);
+  if (!target) {
+    res.status(404).json({ success: false, error: '用户不存在，确认一下用户名' });
+    return;
+  }
+  if (target.id === req.userId) {
+    res.status(400).json({ success: false, error: '不能添加自己为好友' });
+    return;
+  }
+  if (!db.addFriend(req.userId!, target.id)) {
+    res.status(400).json({ success: false, error: '对方已经在你的好友列表里了' });
+    return;
+  }
+  res.json({
+    success: true,
+    data: { id: target.id, username: target.username, nickname: target.nickname, avatar: target.avatar, rank: db.getStats(target.id)?.rank ?? 1000, online: onlineUsers.has(target.id) } as FriendInfo,
+  });
+});
+
+// 删除好友
+userRouter.delete('/friends/:friendId', (req: any, res: Response) => {
+  const removed = db.removeFriend(req.userId!, req.params.friendId);
+  if (!removed) {
+    res.status(404).json({ success: false, error: '好友不存在' });
+    return;
+  }
+  res.json({ success: true, data: {} });
 });
 
 // 获取游戏记录（按玩家视角返回：对手昵称、双方比分、胜负）

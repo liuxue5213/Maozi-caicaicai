@@ -84,6 +84,18 @@ interface PendingPrivateRoom {
   createdAt: number;
 }
 
+/** 好友约战：发起方等待接受方响应的挂起挑战 */
+interface PendingChallenge {
+  id: string;
+  /** 发起方的连接（GameScreen），接受后以此连接为玩家1开局 */
+  fromClientId: string;
+  fromUserId: string;
+  toUserId: string;
+  mode: GameMode;
+  createdAt: number;
+  timer: NodeJS.Timeout;
+}
+
 /** 邀请码字符集（去掉易混淆的 I/O/0/1） */
 const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const ROOM_CODE_LENGTH = 4;
@@ -93,6 +105,8 @@ const PRIVATE_ROOM_TTL_MS = 10 * 60 * 1000;
 const WS_MSG_RATE_LIMIT = 30;
 /** 表情发送最小间隔（毫秒），防止刷屏 */
 const EMOJI_COOLDOWN_MS = 1500;
+/** 约战等待接受的时限 */
+const CHALLENGE_TIMEOUT_MS = 30000;
 
 interface GameRoom {
   id: string;
@@ -121,6 +135,8 @@ export class GameWebSocketServer {
   private matchingQueue: ConnectedClient[] = [];
   /** 邀请码 -> 待开始的私密房间 */
   private privateRooms: Map<string, PendingPrivateRoom> = new Map();
+  /** 约战 id -> 挂起的挑战 */
+  private challenges: Map<string, PendingChallenge> = new Map();
   private heartbeatInterval: NodeJS.Timeout | null = null;
 
   constructor(private wss: WebSocketServer) {
@@ -227,6 +243,12 @@ export class GameWebSocketServer {
         break;
       case ClientMessage.SEND_EMOJI:
         if (client.isAuthenticated) this.handleSendEmoji(clientId, payload);
+        break;
+      case ClientMessage.CHALLENGE:
+        if (client.isAuthenticated) this.handleChallenge(clientId, payload);
+        break;
+      case ClientMessage.CHALLENGE_RESPONSE:
+        if (client.isAuthenticated) this.handleChallengeResponse(clientId, payload);
         break;
       case ClientMessage.MAKE_CHOICE:
         if (client.isAuthenticated) this.handleMakeChoice(clientId, payload);
@@ -518,6 +540,121 @@ export class GameWebSocketServer {
         type: ServerMessage.EMOJI_RECEIVED,
         payload: { emoji },
       });
+    }
+  }
+
+  // ---- 好友约战 ----
+
+  private handleChallenge(clientId: string, payload: { targetId: string; mode?: GameMode }): void {
+    const client = this.clients.get(clientId);
+    if (!client || client.isMatching || client.currentGameId) return;
+
+    const targetId = String(payload?.targetId || '');
+    const mode = payload?.mode || GameMode.BEST_OF_3;
+    if (!Object.values(GameMode).includes(mode) || !targetId || targetId === client.userId) return;
+
+    // 自己转去约战时，取消名下的私密房间
+    this.removePendingRoomsOfHost(clientId);
+
+    // 目标在线且空闲才可约战（对方任意连接在对局/匹配中都视为忙碌）
+    const targetConns = Array.from(this.clients.values()).filter(
+      (c) => c.userId === targetId && c.isAuthenticated
+    );
+    const targetBusy =
+      this.userGames.has(targetId) || targetConns.length === 0 || targetConns.some((c) => c.currentGameId || c.isMatching);
+    if (targetBusy) {
+      this.sendToClient(client.ws, {
+        type: ServerMessage.CHALLENGE_DECLINED,
+        payload: { reason: 'unavailable' },
+      });
+      return;
+    }
+
+    const id = uuidv4();
+    const challenge: PendingChallenge = {
+      id,
+      fromClientId: clientId,
+      fromUserId: client.userId,
+      toUserId: targetId,
+      mode,
+      createdAt: Date.now(),
+      timer: setTimeout(() => {
+        this.challenges.delete(id);
+        const from = this.clients.get(clientId);
+        if (from && !from.currentGameId) {
+          this.sendToClient(from.ws, {
+            type: ServerMessage.CHALLENGE_DECLINED,
+            payload: { reason: 'timeout' },
+          });
+        }
+      }, CHALLENGE_TIMEOUT_MS),
+    };
+    this.challenges.set(id, challenge);
+
+    const fromPayload = {
+      challengeId: id,
+      from: { id: client.userId, nickname: client.nickname, avatar: client.avatar },
+      mode,
+    };
+    targetConns.forEach((c) => {
+      this.sendToClient(c.ws, { type: ServerMessage.CHALLENGE_RECEIVED, payload: fromPayload });
+    });
+    console.log(`[Challenge] ${client.nickname} 向 ${targetId} 发起约战 (${id.slice(0, 8)})`);
+  }
+
+  private handleChallengeResponse(clientId: string, payload: { challengeId: string; accept: boolean }): void {
+    const responder = this.clients.get(clientId);
+    if (!responder) return;
+
+    const challenge = this.challenges.get(String(payload?.challengeId || ''));
+    if (!challenge) {
+      this.sendToClient(responder.ws, { type: ServerMessage.ERROR, payload: { error: '约战已失效或已被处理' } });
+      return;
+    }
+    if (responder.userId !== challenge.toUserId) return;
+
+    // 只允许响应一次
+    clearTimeout(challenge.timer);
+    this.challenges.delete(challenge.id);
+
+    const from = this.clients.get(challenge.fromClientId);
+    const bothFree =
+      from && !from.currentGameId && !from.isMatching && !responder.currentGameId && !responder.isMatching;
+
+    if (!payload?.accept || !from || !bothFree) {
+      if (from && !from.currentGameId) {
+        this.sendToClient(from.ws, {
+          type: ServerMessage.CHALLENGE_DECLINED,
+          payload: { reason: payload?.accept ? 'unavailable' : 'declined' },
+        });
+      }
+      return;
+    }
+
+    // 接受：以发起方为玩家1开局。接受方此刻停留在好友页连接上，
+    // 其游戏界面随后通过 RECONNECT 机制自动接管对局
+    this.startGame(from, responder, challenge.mode, false);
+    console.log(`[Challenge] 约战 ${challenge.id.slice(0, 8)} 已被接受，对局开始`);
+  }
+
+  /** 清理与指定连接/用户相关的挂起约战 */
+  private cleanupChallengesFor(clientId: string, userId: string): void {
+    for (const [id, challenge] of this.challenges) {
+      if (challenge.fromClientId === clientId) {
+        clearTimeout(challenge.timer);
+        this.challenges.delete(id);
+      } else if (challenge.toUserId === userId) {
+        // 被约战方掉线：通知发起方
+        clearTimeout(challenge.timer);
+        this.challenges.delete(id);
+        const from = this.clients.get(challenge.fromClientId);
+        if (from && !from.currentGameId) {
+          this.sendToClient(from.ws, {
+            type: ServerMessage.CHALLENGE_DECLINED,
+            payload: { reason: 'unavailable' },
+          });
+        }
+      }
     }
   }
 
@@ -1049,8 +1186,9 @@ export class GameWebSocketServer {
       }
     }
 
-    // 清理该连接名下的私密房间
+    // 清理该连接名下的私密房间与挂起约战
     this.removePendingRoomsOfHost(clientId);
+    this.cleanupChallengesFor(clientId, client.userId);
 
     if (!Array.from(this.clients.values()).some((other) => other.userId === client.userId && other.isAuthenticated)) {
       onlineUsers.delete(client.userId);

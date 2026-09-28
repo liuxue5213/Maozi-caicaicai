@@ -20,12 +20,14 @@ import { playSound } from '../utils/sounds';
 
 interface GameParams {
   mode: GameMode;
-  matchType: 'online' | 'ai' | 'private';
+  matchType: 'online' | 'ai' | 'private' | 'challenge' | 'friend-game';
   difficulty?: AiDifficulty;
   /** matchType === 'private' 时：create=建房 / join=凭码进房 */
   privateAction?: 'create' | 'join';
   /** matchType === 'private' && privateAction === 'join' 时的邀请码 */
   roomCode?: string;
+  /** matchType === 'challenge' 时的约战目标好友 id */
+  targetId?: string;
 }
 
 const CHOICES: GameChoice[] = [GameChoice.ROCK, GameChoice.SCISSORS, GameChoice.PAPER];
@@ -138,7 +140,7 @@ export function GameScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const insets = useSafeAreaInsets();
-  const { mode, matchType, difficulty, privateAction, roomCode } = (route.params || {
+  const { mode, matchType, difficulty, privateAction, roomCode, targetId } = (route.params || {
     mode: GameMode.BEST_OF_3,
     matchType: 'online',
   }) as GameParams;
@@ -343,6 +345,22 @@ export function GameScreen() {
     [matchType, navigation]
   );
 
+  /** 收到自己发起的约战被拒绝/超时/对方不可用：提示并返回 */
+  const handleChallengeDeclined = useCallback(
+    (payload: any) => {
+      if (matchType !== 'challenge' || phaseRef.current !== GamePhase.WAITING) return;
+      const reasonMap: Record<string, string> = {
+        declined: '对方婉拒了你的约战',
+        timeout: '对方没有响应，约战已超时',
+        unavailable: '对方当前不在线或正在对局中',
+      };
+      Alert.alert('约战未成局', reasonMap[payload?.reason] || '约战未成局', [
+        { text: '确定', onPress: () => navigation.goBack() },
+      ]);
+    },
+    [matchType, navigation]
+  );
+
   /** 断线恢复：按服务器返回的对局状态重建界面 */
   const handleReconnectSuccess = useCallback((payload: any) => {
     setIsMatching(false);
@@ -375,6 +393,7 @@ export function GameScreen() {
     onPrivateRoomCreated: handlePrivateRoomCreated,
     onPrivateRoomJoined: handlePrivateRoomJoined,
     onEmojiReceived: handleEmojiReceived,
+    onChallengeDeclined: handleChallengeDeclined,
     onError: handleWsError,
   });
 
@@ -452,21 +471,26 @@ export function GameScreen() {
     if (!ws.isConnected) privateInitiatedRef.current = false;
   }, [ws.isConnected]);
 
-  // 修复: 等待认证通过后再开始匹配/建房（唯一触发点，避免重复发送请求）
+  // 修复: 等待认证通过后再开始匹配/建房/约战（唯一触发点，避免重复发送请求）
   useEffect(() => {
     if (!ws.isConnected || !ws.isAuthenticated || phase !== GamePhase.WAITING) return;
 
-    if (matchType === 'private') {
-      // 建房/进房只发一次：失败时由 onError 弹窗返回，避免无限重试
+    if (matchType === 'private' || matchType === 'challenge') {
+      // 建房/进房/约战只发一次：失败时由 onError/CHALLENGE_DECLINED 弹窗返回，避免无限重试
       if (privateInitiatedRef.current) return;
       privateInitiatedRef.current = true;
-      if (privateAction === 'join' && roomCode) {
+      if (matchType === 'challenge') {
+        ws.challenge(targetId || '', mode);
+      } else if (privateAction === 'join' && roomCode) {
         ws.joinPrivateRoom(roomCode);
       } else {
         ws.createPrivateRoom(mode);
       }
       return;
     }
+
+    // friend-game：被约战方接受后进入本页，靠连接时的 RECONNECT 自动接管对局，无需发指令
+    if (matchType === 'friend-game') return;
 
     if (!isMatching && !gameResult) {
       if (matchType === 'ai') {
@@ -475,7 +499,7 @@ export function GameScreen() {
         ws.startMatching(mode);
       }
     }
-  }, [ws.isConnected, ws.isAuthenticated, isMatching, phase, gameResult, matchType, mode, difficulty, privateAction, roomCode]);
+  }, [ws.isConnected, ws.isAuthenticated, isMatching, phase, gameResult, matchType, mode, difficulty, privateAction, roomCode, targetId]);
 
   // 点选手势并立即锁定（服务器会忽略重复选择）
   const confirmChoice = (choice: GameChoice) => {
@@ -550,7 +574,13 @@ export function GameScreen() {
           <View style={styles.centerContent}>
             <ActivityIndicator size="large" color="#6200EE" />
             <Text style={styles.phaseText}>
-              {isMatching ? '正在匹配对手...' : '正在连接服务器...'}
+              {matchType === 'challenge'
+                ? '等待好友接受约战...'
+                : matchType === 'friend-game'
+                  ? '正在进入对局...'
+                  : isMatching
+                    ? '正在匹配对手...'
+                    : '正在连接服务器...'}
             </Text>
             {isMatching && matchType === 'online' && (
               <TouchableOpacity
@@ -724,19 +754,23 @@ export function GameScreen() {
               </View>
             )}
             <View style={styles.gameOverButtons}>
-              {/* 加入私密房间的玩家没有"再来一局"（房间已销毁），返回大厅重新进房 */}
-              {!(matchType === 'private' && privateAction === 'join') && (
+              {/* 被约战方（接管对局）与凭码加入者没有"再来一局"，返回好友页重新发起 */}
+              {!(matchType === 'friend-game' || (matchType === 'private' && privateAction === 'join')) && (
                 <TouchableOpacity
                   style={styles.gameOverButton}
                   onPress={() => {
-                    // 私密房间：重置后重新建房（新的邀请码）；在线/AI：重新匹配
-                    if (matchType === 'private') privateInitiatedRef.current = false;
+                    // 私密房间：重置后重新建房（新的邀请码）；约战：重发邀请；在线/AI：重新匹配
+                    if (matchType === 'private' || matchType === 'challenge') privateInitiatedRef.current = false;
                     setGameResult(null);
                     setPhase(GamePhase.WAITING);
                   }}
                 >
                   <Text style={styles.gameOverButtonText}>
-                    {matchType === 'private' ? '再开一局' : '再来一局'}
+                    {matchType === 'private'
+                      ? '再开一局'
+                      : matchType === 'challenge'
+                        ? '再约一局'
+                        : '再来一局'}
                   </Text>
                 </TouchableOpacity>
               )}
