@@ -374,6 +374,66 @@ export const AVATAR_PRESETS = [
 
 export const DEFAULT_AVATAR = '🐱';
 
+// ---- 成就系统（服务端按指标计算解锁，前后端共享定义） ----
+
+export type AchievementMetric = 'totalGames' | 'wins' | 'bestWinStreak' | 'rank' | 'aiWins' | 'friends';
+
+export interface AchievementDef {
+  id: string;
+  name: string;
+  description: string;
+  emoji: string;
+  metric: AchievementMetric;
+  target: number;
+}
+
+export interface AchievementProgress extends AchievementDef {
+  unlocked: boolean;
+  /** 当前进度值 */
+  current: number;
+}
+
+/** 成就达成所需输入（与 GET /user/achievements 返回一致） */
+export interface AchievementInputs {
+  totalGames: number;
+  wins: number;
+  bestWinStreak: number;
+  rank: number;
+  aiWins: number;
+  friends: number;
+}
+
+export const ACHIEVEMENTS: AchievementDef[] = [
+  { id: 'first-game', name: '初出茅庐', description: '完成第 1 场对局', emoji: '🎯', metric: 'totalGames', target: 1 },
+  { id: 'games-10', name: '略有小成', description: '完成 10 场对局', emoji: '📈', metric: 'totalGames', target: 10 },
+  { id: 'games-50', name: '身经百战', description: '完成 50 场对局', emoji: '💼', metric: 'totalGames', target: 50 },
+  { id: 'games-100', name: '百场老将', description: '完成 100 场对局', emoji: '🏛️', metric: 'totalGames', target: 100 },
+  { id: 'first-win', name: '开门红', description: '赢得第 1 场胜利', emoji: '🥇', metric: 'wins', target: 1 },
+  { id: 'wins-10', name: '小有名气', description: '累计胜利 10 场', emoji: '🌟', metric: 'wins', target: 10 },
+  { id: 'wins-50', name: '常胜将军', description: '累计胜利 50 场', emoji: '🎖️', metric: 'wins', target: 50 },
+  { id: 'wins-100', name: '百胜战神', description: '累计胜利 100 场', emoji: '⚔️', metric: 'wins', target: 100 },
+  { id: 'streak-3', name: '三连捷', description: '拿下 3 连胜', emoji: '🔥', metric: 'bestWinStreak', target: 3 },
+  { id: 'streak-5', name: '势如破竹', description: '拿下 5 连胜', emoji: '🚀', metric: 'bestWinStreak', target: 5 },
+  { id: 'streak-10', name: '十连胜', description: '拿下 10 连胜', emoji: '💫', metric: 'bestWinStreak', target: 10 },
+  { id: 'streak-20', name: '连胜神话', description: '拿下 20 连胜', emoji: '🐉', metric: 'bestWinStreak', target: 20 },
+  { id: 'rank-silver', name: '白银段位', description: '段位分达到 1100', emoji: '🥈', metric: 'rank', target: 1100 },
+  { id: 'rank-gold', name: '黄金段位', description: '段位分达到 1250', emoji: '🥇', metric: 'rank', target: 1250 },
+  { id: 'rank-platinum', name: '铂金段位', description: '段位分达到 1400', emoji: '💎', metric: 'rank', target: 1400 },
+  { id: 'rank-master', name: '大师段位', description: '段位分达到 1700', emoji: '👑', metric: 'rank', target: 1700 },
+  { id: 'rank-king', name: '王者段位', description: '段位分达到 1900', emoji: '🔥', metric: 'rank', target: 1900 },
+  { id: 'ai-wins-10', name: '人机克星', description: '战胜 AI 10 次', emoji: '🤖', metric: 'aiWins', target: 10 },
+  { id: 'friends-3', name: '以拳会友', description: '添加 3 位好友', emoji: '🤝', metric: 'friends', target: 3 },
+  { id: 'friends-10', name: '社交达人', description: '添加 10 位好友', emoji: '🎊', metric: 'friends', target: 10 },
+];
+
+/** 按输入计算全部成就的解锁状态与进度（服务端数据源，客户端仅展示） */
+export function buildAchievementProgress(inputs: AchievementInputs): AchievementProgress[] {
+  return ACHIEVEMENTS.map((def) => {
+    const current = inputs[def.metric] ?? 0;
+    return { ...def, unlocked: current >= def.target, current };
+  });
+}
+
 // ---- 称号系统（前后端共享） ----
 
 const GAME_COUNT_TITLES: TitleInfo[] = [

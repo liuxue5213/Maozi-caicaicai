@@ -181,4 +181,18 @@ export const api = {
 
   removeFriend: (friendId: string) =>
     apiRequest(`/user/friends/${friendId}`, { method: 'DELETE' }),
+
+  // 成就列表（含解锁状态与进度）
+  getAchievements: () =>
+    apiRequest<
+      Array<{
+        id: string;
+        name: string;
+        description: string;
+        emoji: string;
+        unlocked: boolean;
+        current: number;
+        target: number;
+      }>
+    >('/user/achievements'),
 };

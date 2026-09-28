@@ -30,6 +30,16 @@ interface HistoryItem {
   won: boolean;
 }
 
+interface AchievementItem {
+  id: string;
+  name: string;
+  description: string;
+  emoji: string;
+  unlocked: boolean;
+  current: number;
+  target: number;
+}
+
 function formatTime(ts: number): string {
   const d = new Date(ts);
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -42,17 +52,16 @@ export function ProfileScreen() {
   const [editingNickname, setEditingNickname] = useState(false);
   const [newNickname, setNewNickname] = useState(user?.nickname || '');
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [achievements, setAchievements] = useState<AchievementItem[]>([]);
   const [soundOn, setSoundOn] = useState(!isSoundMuted());
   const [avatarModal, setAvatarModal] = useState(false);
   const [savingAvatar, setSavingAvatar] = useState(false);
 
-  // 每次切到"我的"页时刷新历史
+  // 每次切到"我的"页时刷新历史与成就
   useFocusEffect(
     useCallback(() => {
-      api
-        .getHistory(20)
-        .then(setHistory)
-        .catch(() => {});
+      api.getHistory(20).then(setHistory).catch(() => {});
+      api.getAchievements().then(setAchievements).catch(() => {});
     }, [])
   );
 
@@ -202,9 +211,49 @@ export function ProfileScreen() {
         )}
       </View>
 
+      {/* 成就墙 */}
+      {achievements.length > 0 && (
+        <View style={styles.achievementCard}>
+          <View style={styles.achievementTitleRow}>
+            <Text style={styles.sectionTitle}>成就</Text>
+            <Text style={styles.achievementCount}>
+              已解锁 {achievements.filter((a) => a.unlocked).length}/{achievements.length}
+            </Text>
+          </View>
+          <View style={styles.achievementGrid}>
+            {achievements.map((a) => (
+              <View key={a.id} style={[styles.achievementCell, !a.unlocked && styles.achievementCellLocked]}>
+                <Text style={styles.achievementEmoji}>{a.emoji}</Text>
+                <Text style={[styles.achievementName, !a.unlocked && styles.achievementNameLocked]} numberOfLines={1}>
+                  {a.name}
+                </Text>
+                <Text style={styles.achievementProgress}>
+                  {a.unlocked ? '已达成' : `${Math.min(a.current, a.target)}/${a.target}`}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
       {/* 最近对局 */}
       <View style={styles.historyCard}>
         <Text style={styles.sectionTitle}>最近对局</Text>
+        {history.length > 0 && (
+          <View style={styles.trendRow}>
+            {[...history].reverse().map((item) => (
+              <View
+                key={`trend-${item.id}`}
+                style={[
+                  styles.trendDot,
+                  {
+                    backgroundColor: item.isDraw ? '#BDBDBD' : item.won ? '#4CAF50' : '#E53935',
+                  },
+                ]}
+              />
+            ))}
+          </View>
+        )}
         {history.length === 0 ? (
           <Text style={styles.historyEmpty}>还没有对局记录，快去打一局吧！</Text>
         ) : (
@@ -408,6 +457,73 @@ const styles = StyleSheet.create({
   avatarModalCancelText: {
     color: '#999',
     fontSize: 15,
+  },
+  achievementCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  achievementTitleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  achievementCount: {
+    color: '#999',
+    fontSize: 13,
+  },
+  achievementGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  achievementCell: {
+    width: '31%',
+    flexGrow: 1,
+    backgroundColor: '#F3E8FF',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#6200EE',
+  },
+  achievementCellLocked: {
+    backgroundColor: '#f5f5f5',
+    borderColor: '#e0e0e0',
+  },
+  achievementEmoji: {
+    fontSize: 22,
+  },
+  achievementName: {
+    color: '#6200EE',
+    fontSize: 11,
+    fontWeight: 'bold',
+    marginTop: 4,
+  },
+  achievementNameLocked: {
+    color: '#999',
+  },
+  achievementProgress: {
+    color: '#999',
+    fontSize: 10,
+    marginTop: 2,
+  },
+  trendRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 5,
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  trendDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
   },
   nickname: {
     color: '#333',

@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { db, onlineUsers } from '../db/database';
 import { authMiddleware } from '../middleware/auth';
-import { AVATAR_PRESETS, FriendInfo } from '@maozi/shared';
+import { AVATAR_PRESETS, FriendInfo, buildAchievementProgress } from '@maozi/shared';
 
 export const userRouter = Router();
 
@@ -105,6 +105,20 @@ userRouter.delete('/friends/:friendId', (req: any, res: Response) => {
     return;
   }
   res.json({ success: true, data: {} });
+});
+
+// 成就列表（按当前数据计算解锁状态与进度）
+userRouter.get('/achievements', (req: any, res: Response) => {
+  const stats = db.getStats(req.userId!);
+  const progress = buildAchievementProgress({
+    totalGames: stats?.totalGames ?? 0,
+    wins: stats?.wins ?? 0,
+    bestWinStreak: stats?.bestWinStreak ?? 0,
+    rank: stats?.rank ?? 1000,
+    aiWins: db.countAiWins(req.userId!),
+    friends: db.getFriendsCount(req.userId!),
+  });
+  res.json({ success: true, data: progress });
 });
 
 // 获取游戏记录（按玩家视角返回：对手昵称、双方比分、胜负）

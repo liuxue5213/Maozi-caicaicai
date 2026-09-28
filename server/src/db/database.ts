@@ -119,6 +119,15 @@ export const db = {
     return (getDatabase().prepare('SELECT COUNT(*) AS count FROM user_stats WHERE total_games > 0').get() as { count: number }).count;
   },
 
+  /** 战胜 AI 的场次（AI 对局中真人为 player1 且 player2 为空） */
+  countAiWins(userId: string): number {
+    return (getDatabase().prepare('SELECT COUNT(*) AS count FROM game_records WHERE player1_id = ? AND player2_id IS NULL AND player1_won = 1').get(userId) as { count: number }).count;
+  },
+
+  getFriendsCount(userId: string): number {
+    return (getDatabase().prepare('SELECT COUNT(*) AS count FROM friends WHERE user_id = ?').get(userId) as { count: number }).count;
+  },
+
   // ---- 好友 ----
 
   addFriend(userId: string, friendId: string): boolean {

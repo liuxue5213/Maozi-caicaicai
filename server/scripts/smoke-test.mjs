@@ -555,6 +555,77 @@ async function testFriendsAndChallenge() {
   sc.terminate();
 }
 
+// ---- 用例 10: 成就计算 ----
+async function testAchievements() {
+  const [uA, uB] = await Promise.all([registerUser('AC1'), registerUser('AC2')]);
+  const sa = new TestSocket('ac-A');
+  const sb = new TestSocket('ac-B');
+  await Promise.all([sa.connect(), sb.connect()]);
+  sa.auth(uA.token);
+  sb.auth(uB.token);
+  await sleep(200);
+
+  // 打完一局（有胜有负才能同时验证胜负两侧）
+  sa.send('START_MATCHING', { mode: 3 });
+  sb.send('START_MATCHING', { mode: 3 });
+  await Promise.all([sa.waitFor('GAME_START'), sb.waitFor('GAME_START')]);
+  for (let i = 0; i < 40; i++) {
+    autoPlay([sa, sb]);
+    const done = await Promise.race([
+      Promise.all([sa.waitFor('GAME_OVER'), sb.waitFor('GAME_OVER')]).then(() => true),
+      sleep(1500).then(() => false),
+    ]);
+    if (done) break;
+  }
+  assert(sa.messages.some((m) => m.type === 'GAME_OVER'), '对局未结束');
+
+  // A 添加 B 为好友（验证 friends 指标）
+  await fetch(`${API_URL}/user/friends`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${uA.token}` },
+    body: JSON.stringify({ username: uB.user.username }),
+  });
+
+  // 再赢一局 AI（验证 aiWins 指标）
+  const sAi = new TestSocket('ac-AI');
+  await sAi.connect();
+  sAi.auth(uA.token);
+  sAi.send('START_AI_MATCH', { mode: 3, aiDifficulty: 'easy' });
+  await sAi.waitFor('GAME_START');
+  for (let i = 0; i < 40; i++) {
+    autoPlay([sAi]);
+    const done = await Promise.race([
+      sAi.waitFor('GAME_OVER').then(() => true),
+      sleep(1500).then(() => false),
+    ]);
+    if (done) break;
+  }
+  assert(sAi.messages.some((m) => m.type === 'GAME_OVER'), 'AI 对局未结束');
+
+  const res = await fetch(`${API_URL}/user/achievements`, {
+    headers: { Authorization: `Bearer ${uA.token}` },
+  });
+  const list = (await res.json()).data;
+  assert(Array.isArray(list) && list.length >= 20, `成就列表异常: ${list.length}`);
+  const byId = Object.fromEntries(list.map((a) => [a.id, a]));
+  assert(byId['first-game'].unlocked && byId['first-game'].current >= 2, 'first-game 未解锁');
+  assert(byId['friends-3'].unlocked === false && byId['friends-3'].current === 1, `friends 进度异常: ${JSON.stringify(byId['friends-3'])}`);
+  // 精确对账：A 只打过 1 局 AI，aiWins 应等于该局是否获胜；first-win 应等于两局任一获胜
+  const aiOver = sAi.messages.find((m) => m.type === 'GAME_OVER');
+  const wonAi = Boolean(aiOver.payload.playerWon) && !aiOver.payload.isDraw;
+  const pvpOver = sa.messages.find((m) => m.type === 'GAME_OVER');
+  const wonPvp = Boolean(pvpOver.payload.playerWon) && !pvpOver.payload.isDraw;
+  const aiWins = byId['ai-wins-10'];
+  assert(aiWins.current === (wonAi ? 1 : 0), `aiWins 对账失败: current=${aiWins.current}, wonAi=${wonAi}`);
+  assert(aiWins.unlocked === (aiWins.current >= aiWins.target), 'aiWins 解锁状态与进度不自洽');
+  const firstWin = byId['first-win'];
+  assert(firstWin.unlocked === (wonAi || wonPvp), `first-win 应等于两局任一获胜: wonAi=${wonAi}, wonPvp=${wonPvp}, ${JSON.stringify(firstWin)}`);
+
+  sa.terminate();
+  sb.terminate();
+  sAi.terminate();
+}
+
 function assert(cond, message) {
   if (!cond) throw new Error(message);
 }
@@ -570,6 +641,7 @@ const cases = [
   ['我的名次接口', testMyRankNoGames],
   ['对局表情与头像', testEmojiAndAvatar],
   ['好友系统与约战', testFriendsAndChallenge],
+  ['成就计算', testAchievements],
 ];
 
 console.log(`冒烟测试开始 -> ws=${WS_URL} api=${API_URL}`);
