@@ -17,6 +17,7 @@ import { useAuthStore } from '../store/authStore';
 import { api } from '../api/client';
 import { getGameCountTitle, getWinStreakTitle } from '../utils/titles';
 import { isSoundMuted, setSoundMuted } from '../utils/sounds';
+import { useTheme, useThemeStore, ThemePref } from '../theme';
 
 interface HistoryItem {
   id: string;
@@ -48,6 +49,9 @@ function formatTime(ts: number): string {
 
 export function ProfileScreen() {
   const insets = useSafeAreaInsets();
+  const t = useTheme();
+  const themePref = useThemeStore((s) => s.pref);
+  const setThemePref = useThemeStore((s) => s.setPref);
   const { user, stats, logout, updateNickname, updateAvatar } = useAuthStore();
   const [editingNickname, setEditingNickname] = useState(false);
   const [newNickname, setNewNickname] = useState(user?.nickname || '');
@@ -106,14 +110,18 @@ export function ProfileScreen() {
   const winStreakTitle = stats ? getWinStreakTitle(stats.currentWinStreak) : null;
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={[styles.container, { backgroundColor: t.background }]}>
       {/* 用户信息卡片 */}
       <View style={[styles.profileCard, { paddingTop: insets.top + 20 }]}>
-        <TouchableOpacity style={styles.avatar} activeOpacity={0.8} onPress={() => setAvatarModal(true)}>
-          <Text style={styles.avatarText}>
+        <TouchableOpacity
+          style={[styles.avatar, { backgroundColor: t.primary }]}
+          activeOpacity={0.8}
+          onPress={() => setAvatarModal(true)}
+        >
+          <Text style={[styles.avatarText, { color: t.onGradient }]}>
             {user?.avatar || user?.nickname?.[0] || DEFAULT_AVATAR}
           </Text>
-          <View style={styles.avatarEditBadge}>
+          <View style={[styles.avatarEditBadge, { backgroundColor: t.card, borderColor: t.border }]}>
             <Text style={styles.avatarEditBadgeText}>✏️</Text>
           </View>
         </TouchableOpacity>
@@ -121,7 +129,7 @@ export function ProfileScreen() {
         {editingNickname ? (
           <View style={styles.editContainer}>
             <TextInput
-              style={styles.nicknameInput}
+              style={[styles.nicknameInput, { backgroundColor: t.inputBg, borderColor: t.border, color: t.text }]}
               value={newNickname}
               onChangeText={setNewNickname}
               maxLength={20}
@@ -129,29 +137,29 @@ export function ProfileScreen() {
             />
             <View style={styles.editButtons}>
               <TouchableOpacity onPress={() => setEditingNickname(false)}>
-                <Text style={styles.cancelText}>取消</Text>
+                <Text style={[styles.cancelText, { color: t.textMuted }]}>取消</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={handleSaveNickname}>
-                <Text style={styles.saveText}>保存</Text>
+                <Text style={[styles.saveText, { color: t.primary }]}>保存</Text>
               </TouchableOpacity>
             </View>
           </View>
         ) : (
           <TouchableOpacity onPress={() => setEditingNickname(true)}>
-            <Text style={styles.nickname}>{user?.nickname}</Text>
-            <Text style={styles.editHint}>点击修改昵称</Text>
+            <Text style={[styles.nickname, { color: t.text }]}>{user?.nickname}</Text>
+            <Text style={[styles.editHint, { color: t.textMuted }]}>点击修改昵称</Text>
           </TouchableOpacity>
         )}
       </View>
 
       {/* 称号展示 */}
       {gameCountTitle && (
-        <View style={styles.titleCard}>
-          <Text style={styles.titleLabel}>当前称号</Text>
+        <View style={[styles.titleCard, { backgroundColor: t.card, borderColor: t.border }]}>
+          <Text style={[styles.titleLabel, { color: t.textMuted }]}>当前称号</Text>
           <Text style={[styles.titleName, { color: gameCountTitle.color }]}>
             {gameCountTitle.name}
           </Text>
-          <Text style={styles.titleDesc}>{gameCountTitle.description}</Text>
+          <Text style={[styles.titleDesc, { color: t.textSecondary }]}>{gameCountTitle.description}</Text>
           {winStreakTitle && (
             <Text style={[styles.titleName, { color: winStreakTitle.color, marginTop: 8 }]}>
               {winStreakTitle.name}
@@ -161,43 +169,43 @@ export function ProfileScreen() {
       )}
 
       {/* 战绩统计 */}
-      <View style={styles.statsCard}>
-        <Text style={styles.sectionTitle}>详细战绩</Text>
+      <View style={[styles.statsCard, { backgroundColor: t.card, borderColor: t.border }]}>
+        <Text style={[styles.sectionTitle, { color: t.text }]}>详细战绩</Text>
         <View style={styles.statsGrid}>
-          <View style={styles.statBox}>
-            <Text style={styles.statNumber}>{stats?.totalGames || 0}</Text>
-            <Text style={styles.statName}>总场次</Text>
+          <View style={[styles.statBox, { backgroundColor: t.background }]}>
+            <Text style={[styles.statNumber, { color: t.text }]}>{stats?.totalGames || 0}</Text>
+            <Text style={[styles.statName, { color: t.textSecondary }]}>总场次</Text>
           </View>
-          <View style={styles.statBox}>
-            <Text style={[styles.statNumber, styles.winNumber]}>{stats?.wins || 0}</Text>
-            <Text style={styles.statName}>胜场</Text>
+          <View style={[styles.statBox, { backgroundColor: t.background }]}>
+            <Text style={[styles.statNumber, { color: t.success }]}>{stats?.wins || 0}</Text>
+            <Text style={[styles.statName, { color: t.textSecondary }]}>胜场</Text>
           </View>
-          <View style={styles.statBox}>
-            <Text style={[styles.statNumber, styles.loseNumber]}>{stats?.losses || 0}</Text>
-            <Text style={styles.statName}>负场</Text>
+          <View style={[styles.statBox, { backgroundColor: t.background }]}>
+            <Text style={[styles.statNumber, { color: t.danger }]}>{stats?.losses || 0}</Text>
+            <Text style={[styles.statName, { color: t.textSecondary }]}>负场</Text>
           </View>
-          <View style={styles.statBox}>
-            <Text style={[styles.statNumber, styles.drawNumber]}>{stats?.draws || 0}</Text>
-            <Text style={styles.statName}>平局</Text>
+          <View style={[styles.statBox, { backgroundColor: t.background }]}>
+            <Text style={[styles.statNumber, { color: t.warning }]}>{stats?.draws || 0}</Text>
+            <Text style={[styles.statName, { color: t.textSecondary }]}>平局</Text>
           </View>
-          <View style={styles.statBox}>
-            <Text style={styles.statNumber}>
+          <View style={[styles.statBox, { backgroundColor: t.background }]}>
+            <Text style={[styles.statNumber, { color: t.text }]}>
               {stats?.totalGames
                 ? Math.round((stats.wins / stats.totalGames) * 100)
                 : 0}%
             </Text>
-            <Text style={styles.statName}>胜率</Text>
+            <Text style={[styles.statName, { color: t.textSecondary }]}>胜率</Text>
           </View>
-          <View style={styles.statBox}>
-            <Text style={styles.statNumber}>{stats?.bestWinStreak || 0}</Text>
-            <Text style={styles.statName}>最高连胜</Text>
+          <View style={[styles.statBox, { backgroundColor: t.background }]}>
+            <Text style={[styles.statNumber, { color: t.text }]}>{stats?.bestWinStreak || 0}</Text>
+            <Text style={[styles.statName, { color: t.textSecondary }]}>最高连胜</Text>
           </View>
         </View>
       </View>
 
       {/* 段位 */}
-      <View style={styles.rankCard}>
-        <Text style={styles.sectionTitle}>我的段位</Text>
+      <View style={[styles.rankCard, { backgroundColor: t.card, borderColor: t.border }]}>
+        <Text style={[styles.sectionTitle, { color: t.text }]}>我的段位</Text>
         {stats && (
           <>
             <Text style={[styles.tierEmoji, { color: getRankTier(stats.rank).color }]}>
@@ -206,28 +214,38 @@ export function ProfileScreen() {
             <Text style={[styles.tierName, { color: getRankTier(stats.rank).color }]}>
               {getRankTier(stats.rank).name}
             </Text>
-            <Text style={styles.rankScore}>{stats.rank} 分</Text>
+            <Text style={[styles.rankScore, { color: t.textSecondary }]}>{stats.rank} 分</Text>
           </>
         )}
       </View>
 
       {/* 成就墙 */}
       {achievements.length > 0 && (
-        <View style={styles.achievementCard}>
+        <View style={[styles.achievementCard, { backgroundColor: t.card, borderColor: t.border }]}>
           <View style={styles.achievementTitleRow}>
-            <Text style={styles.sectionTitle}>成就</Text>
-            <Text style={styles.achievementCount}>
+            <Text style={[styles.sectionTitle, { color: t.text }]}>成就</Text>
+            <Text style={[styles.achievementCount, { color: t.textMuted }]}>
               已解锁 {achievements.filter((a) => a.unlocked).length}/{achievements.length}
             </Text>
           </View>
           <View style={styles.achievementGrid}>
             {achievements.map((a) => (
-              <View key={a.id} style={[styles.achievementCell, !a.unlocked && styles.achievementCellLocked]}>
+              <View
+                key={a.id}
+                style={[
+                  styles.achievementCell,
+                  { backgroundColor: t.primarySoft, borderColor: t.primary },
+                  !a.unlocked && { backgroundColor: t.background, borderColor: t.border },
+                ]}
+              >
                 <Text style={styles.achievementEmoji}>{a.emoji}</Text>
-                <Text style={[styles.achievementName, !a.unlocked && styles.achievementNameLocked]} numberOfLines={1}>
+                <Text
+                  style={[styles.achievementName, { color: t.primary }, !a.unlocked && styles.achievementNameLocked]}
+                  numberOfLines={1}
+                >
                   {a.name}
                 </Text>
-                <Text style={styles.achievementProgress}>
+                <Text style={[styles.achievementProgress, { color: t.textMuted }]}>
                   {a.unlocked ? '已达成' : `${Math.min(a.current, a.target)}/${a.target}`}
                 </Text>
               </View>
@@ -237,8 +255,8 @@ export function ProfileScreen() {
       )}
 
       {/* 最近对局 */}
-      <View style={styles.historyCard}>
-        <Text style={styles.sectionTitle}>最近对局</Text>
+      <View style={[styles.historyCard, { backgroundColor: t.card, borderColor: t.border }]}>
+        <Text style={[styles.sectionTitle, { color: t.text }]}>最近对局</Text>
         {history.length > 0 && (
           <View style={styles.trendRow}>
             {[...history].reverse().map((item) => (
@@ -247,7 +265,7 @@ export function ProfileScreen() {
                 style={[
                   styles.trendDot,
                   {
-                    backgroundColor: item.isDraw ? '#BDBDBD' : item.won ? '#4CAF50' : '#E53935',
+                    backgroundColor: item.isDraw ? t.textMuted : item.won ? t.success : t.danger,
                   },
                 ]}
               />
@@ -255,19 +273,19 @@ export function ProfileScreen() {
           </View>
         )}
         {history.length === 0 ? (
-          <Text style={styles.historyEmpty}>还没有对局记录，快去打一局吧！</Text>
+          <Text style={[styles.historyEmpty, { color: t.textMuted }]}>还没有对局记录，快去打一局吧！</Text>
         ) : (
           history.map((item) => (
-            <View key={item.id} style={styles.historyItem}>
+            <View key={item.id} style={[styles.historyItem, { borderBottomColor: t.border }]}>
               <View
                 style={[
                   styles.resultBadge,
                   {
                     backgroundColor: item.isDraw
-                      ? '#FFF3E0'
+                      ? t.warningSoft
                       : item.won
-                        ? '#E8F5E9'
-                        : '#FFEBEE',
+                        ? t.successSoft
+                        : t.dangerSoft,
                   },
                 ]}
               >
@@ -275,7 +293,7 @@ export function ProfileScreen() {
                   style={[
                     styles.resultBadgeText,
                     {
-                      color: item.isDraw ? '#E65100' : item.won ? '#2E7D32' : '#C62828',
+                      color: item.isDraw ? t.warning : item.won ? t.success : t.danger,
                     },
                   ]}
                 >
@@ -283,11 +301,11 @@ export function ProfileScreen() {
                 </Text>
               </View>
               <View style={styles.historyInfo}>
-                <Text style={styles.historyOpponent} numberOfLines={1}>
+                <Text style={[styles.historyOpponent, { color: t.text }]} numberOfLines={1}>
                   vs {item.opponentNickname}
                   {item.isAi ? '（AI）' : ''}
                 </Text>
-                <Text style={styles.historyMeta}>
+                <Text style={[styles.historyMeta, { color: t.textSecondary }]}>
                   {GAME_MODE_LABELS[item.mode as keyof typeof GAME_MODE_LABELS] ?? '对局'} ·{' '}
                   {formatTime(item.timestamp)}
                 </Text>
@@ -295,7 +313,7 @@ export function ProfileScreen() {
               <Text
                 style={[
                   styles.historyScore,
-                  { color: item.isDraw ? '#FF9800' : item.won ? '#4CAF50' : '#E53935' },
+                  { color: item.isDraw ? t.warning : item.won ? t.success : t.danger },
                 ]}
               >
                 {item.myScore} : {item.opponentScore}
@@ -306,17 +324,45 @@ export function ProfileScreen() {
       </View>
 
       {/* 设置 */}
-      <View style={styles.settingCard}>
-        <Text style={styles.sectionTitle}>设置</Text>
-        <View style={styles.settingRow}>
-          <Text style={styles.settingLabel}>🔊 对局音效</Text>
+      <View style={[styles.settingCard, { backgroundColor: t.card, borderColor: t.border }]}>
+        <Text style={[styles.sectionTitle, { color: t.text }]}>设置</Text>
+        <View style={[styles.settingRow, { borderBottomColor: t.border }]}>
+          <Text style={[styles.settingLabel, { color: t.text }]}>🔊 对局音效</Text>
           <Switch value={soundOn} onValueChange={handleToggleSound} />
+        </View>
+        <View style={styles.settingRow}>
+          <Text style={[styles.settingLabel, { color: t.text }]}>🎨 外观</Text>
+          <View style={[styles.appearanceRow, { backgroundColor: t.background }]}>
+            {(['system', 'light', 'dark'] as const).map((pref) => (
+              <TouchableOpacity
+                key={pref}
+                style={[
+                  styles.appearanceOption,
+                  themePref === pref && { backgroundColor: t.primary },
+                ]}
+                onPress={() => setThemePref(pref)}
+              >
+                <Text
+                  style={[
+                    styles.appearanceOptionText,
+                    { color: t.textSecondary },
+                    themePref === pref && { color: t.onPrimary, fontWeight: 'bold' as const },
+                  ]}
+                >
+                  {pref === 'system' ? '跟随系统' : pref === 'light' ? '浅色' : '深色'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
       </View>
 
       {/* 退出登录 */}
-      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-        <Text style={styles.logoutText}>退出登录</Text>
+      <TouchableOpacity
+        style={[styles.logoutButton, { backgroundColor: t.card, borderColor: t.border }]}
+        onPress={handleLogout}
+      >
+        <Text style={[styles.logoutText, { color: t.danger }]}>退出登录</Text>
       </TouchableOpacity>
 
       {/* 头像选择弹窗 */}
@@ -327,16 +373,20 @@ export function ProfileScreen() {
         onRequestClose={() => setAvatarModal(false)}
       >
         <View style={styles.avatarModalOverlay}>
-          <View style={styles.avatarModalCard}>
-            <Text style={styles.avatarModalTitle}>选择头像</Text>
-            <Text style={styles.avatarModalDesc}>选一个喜欢的形象，对手在对局里能看到</Text>
+          <View style={[styles.avatarModalCard, { backgroundColor: t.card }]}>
+            <Text style={[styles.avatarModalTitle, { color: t.text }]}>选择头像</Text>
+            <Text style={[styles.avatarModalDesc, { color: t.textMuted }]}>选一个喜欢的形象，对手在对局里能看到</Text>
             <View style={styles.avatarGrid}>
               {AVATAR_PRESETS.map((avatar) => {
                 const isCurrent = user?.avatar === avatar;
                 return (
                   <TouchableOpacity
                     key={avatar}
-                    style={[styles.avatarCell, isCurrent && styles.avatarCellActive]}
+                    style={[
+                      styles.avatarCell,
+                      { backgroundColor: t.background },
+                      isCurrent && { backgroundColor: t.primarySoft, borderColor: t.primary },
+                    ]}
                     onPress={() => handleSelectAvatar(avatar)}
                     disabled={savingAvatar}
                   >
@@ -345,8 +395,11 @@ export function ProfileScreen() {
                 );
               })}
             </View>
-            <TouchableOpacity style={styles.avatarModalCancel} onPress={() => setAvatarModal(false)}>
-              <Text style={styles.avatarModalCancelText}>取消</Text>
+            <TouchableOpacity
+              style={styles.avatarModalCancel}
+              onPress={() => setAvatarModal(false)}
+            >
+              <Text style={[styles.avatarModalCancelText, { color: t.textMuted }]}>取消</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -524,6 +577,20 @@ const styles = StyleSheet.create({
     width: 12,
     height: 12,
     borderRadius: 6,
+  },
+  appearanceRow: {
+    flexDirection: 'row',
+    borderRadius: 10,
+    padding: 3,
+    gap: 3,
+  },
+  appearanceOption: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+  },
+  appearanceOptionText: {
+    fontSize: 12,
   },
   nickname: {
     color: '#333',

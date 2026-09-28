@@ -15,6 +15,7 @@ import { useNavigation } from '@react-navigation/native';
 import { GameMode, getRankTier, FriendInfo } from '@maozi/shared';
 import { api } from '../api/client';
 import { useWebSocket } from '../hooks/useWebSocket';
+import { useTheme } from '../theme';
 
 /**
  * 好友页：添加/删除好友、查看在线状态、一键约战。
@@ -24,6 +25,7 @@ import { useWebSocket } from '../hooks/useWebSocket';
 export function FriendsScreen() {
   const insets = useSafeAreaInsets();
   const nav = useNavigation<any>();
+  const t = useTheme();
   const [friends, setFriends] = useState<FriendInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -142,13 +144,13 @@ export function FriendsScreen() {
   const renderItem = ({ item }: { item: FriendInfo }) => {
     const tier = getRankTier(item.rank);
     return (
-      <View style={styles.item}>
+      <View style={[styles.item, { backgroundColor: t.card, borderColor: t.border }]}>
         <Text style={styles.itemAvatar}>{item.avatar || '🙂'}</Text>
         <View style={styles.itemInfo}>
           <View style={styles.itemNameRow}>
-            <Text style={styles.itemNickname}>{item.nickname}</Text>
+            <Text style={[styles.itemNickname, { color: t.text }]}>{item.nickname}</Text>
             <View style={[styles.onlineDot, item.online ? styles.onlineOn : styles.onlineOff]} />
-            <Text style={[styles.onlineText, { color: item.online ? '#4CAF50' : '#999' }]}>
+            <Text style={[styles.onlineText, { color: item.online ? t.success : t.textMuted }]}>
               {item.online ? '在线' : '离线'}
             </Text>
           </View>
@@ -157,49 +159,49 @@ export function FriendsScreen() {
           </Text>
         </View>
         <TouchableOpacity
-          style={[styles.challengeButton, !item.online && styles.challengeButtonDisabled]}
+          style={[styles.challengeButton, { backgroundColor: '#FF7043' }, !item.online && styles.challengeButtonDisabled]}
           disabled={!item.online}
           onPress={() => handleChallenge(item)}
         >
           <Text style={styles.challengeButtonText}>约战</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.removeButton} onPress={() => handleRemove(item)}>
-          <Text style={styles.removeButtonText}>删除</Text>
+          <Text style={[styles.removeButtonText, { color: t.textMuted }]}>删除</Text>
         </TouchableOpacity>
       </View>
     );
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: t.background }]}>
       <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
-        <Text style={styles.headerTitle}>👥 好友</Text>
+        <Text style={[styles.headerTitle, { color: t.text }]}>👥 好友</Text>
         <View style={styles.addRow}>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: t.inputBg, borderColor: t.border, color: t.text }]}
             value={inputName}
             onChangeText={setInputName}
             placeholder="输入好友的注册用户名"
-            placeholderTextColor="#bbb"
+            placeholderTextColor={t.textMuted}
             autoCapitalize="none"
             autoCorrect={false}
             maxLength={20}
           />
-          <TouchableOpacity style={styles.addButton} onPress={handleAdd} disabled={adding}>
-            <Text style={styles.addButtonText}>{adding ? '...' : '添加'}</Text>
+          <TouchableOpacity style={[styles.addButton, { backgroundColor: t.primary }]} onPress={handleAdd} disabled={adding}>
+            <Text style={[styles.addButtonText, { color: t.onGradient }]}>{adding ? '...' : '添加'}</Text>
           </TouchableOpacity>
         </View>
       </View>
 
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#6200EE" />
+          <ActivityIndicator size="large" color={t.primary} />
         </View>
       ) : friends.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyEmoji}>👋</Text>
-          <Text style={styles.emptyText}>还没有好友</Text>
-          <Text style={styles.emptyHint}>输入对方的注册用户名添加，添加后可以随时约战</Text>
+          <Text style={[styles.emptyText, { color: t.text }]}>还没有好友</Text>
+          <Text style={[styles.emptyHint, { color: t.textMuted }]}>输入对方的注册用户名添加，添加后可以随时约战</Text>
         </View>
       ) : (
         <FlatList
@@ -207,7 +209,7 @@ export function FriendsScreen() {
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchFriends(); }} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchFriends(); }} tintColor={t.primary} />}
         />
       )}
     </View>

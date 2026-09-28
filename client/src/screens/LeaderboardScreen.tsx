@@ -11,6 +11,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getRankTier, MyRankInfo } from '@maozi/shared';
 import { api } from '../api/client';
+import { useTheme } from '../theme';
 
 interface LeaderboardEntry {
   rank: number;
@@ -31,6 +32,7 @@ interface LeaderboardEntry {
 
 export function LeaderboardScreen() {
   const insets = useSafeAreaInsets();
+  const t = useTheme();
   const [type, setType] = useState<'wins' | 'streak' | 'rank'>('wins');
   const [data, setData] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,17 +76,17 @@ export function LeaderboardScreen() {
   /** 榜单项右侧的数值展示（榜单与“我的名次”栏共用） */
   const renderStat = (stats: LeaderboardEntry['stats']) => {
     if (type === 'wins') {
-      return <Text style={styles.statValue}>{stats.wins}胜</Text>;
+      return <Text style={[styles.statValue, { color: t.success }]}>{stats.wins}胜</Text>;
     }
     if (type === 'streak') {
-      return <Text style={styles.statValue}>{stats.bestWinStreak}连胜</Text>;
+      return <Text style={[styles.statValue, { color: t.success }]}>{stats.bestWinStreak}连胜</Text>;
     }
     return (
       <View style={styles.rankStat}>
         <Text style={[styles.tierText, { color: getRankTier(stats.rank).color }]}>
           {getRankTier(stats.rank).emoji} {getRankTier(stats.rank).name}
         </Text>
-        <Text style={styles.rankScore}>{stats.rank}分</Text>
+        <Text style={[styles.rankScore, { color: t.textMuted }]}>{stats.rank}分</Text>
       </View>
     );
   };
@@ -94,18 +96,18 @@ export function LeaderboardScreen() {
     const rankEmoji = item.rank === 1 ? '🥇' : item.rank === 2 ? '🥈' : item.rank === 3 ? '🥉' : '';
 
     return (
-      <View style={[styles.item, isTop3 && styles.itemTop3]}>
+      <View style={[styles.item, { backgroundColor: t.card, borderColor: t.border }, isTop3 && styles.itemTop3]}>
         <View style={styles.rankContainer}>
           {isTop3 ? (
             <Text style={styles.rankEmoji}>{rankEmoji}</Text>
           ) : (
-            <Text style={styles.rankText}>{item.rank}</Text>
+            <Text style={[styles.rankText, { color: t.textSecondary }]}>{item.rank}</Text>
           )}
         </View>
         <Text style={styles.itemAvatar}>{item.user.avatar || '🙂'}</Text>
         <View style={styles.userInfo}>
-          <Text style={styles.nickname}>{item.user.nickname}</Text>
-          <Text style={styles.detailText}>
+          <Text style={[styles.nickname, { color: t.text }]}>{item.user.nickname}</Text>
+          <Text style={[styles.detailText, { color: t.textSecondary }]}>
             胜率: {item.stats.totalGames > 0
               ? Math.round((item.stats.wins / item.stats.totalGames) * 100)
               : 0}%
@@ -118,30 +120,42 @@ export function LeaderboardScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: t.background }]}>
       {/* 类型切换 */}
       <View style={[styles.tabContainer, { paddingTop: insets.top + 16 }]}>
         <TouchableOpacity
-          style={[styles.tab, type === 'wins' && styles.tabActive]}
+          style={[
+            styles.tab,
+            { backgroundColor: t.card, borderColor: t.border },
+            type === 'wins' && { backgroundColor: t.primary, borderColor: t.primary },
+          ]}
           onPress={() => setType('wins')}
         >
-          <Text style={[styles.tabText, type === 'wins' && styles.tabTextActive]}>
+          <Text style={[styles.tabText, { color: t.textSecondary }, type === 'wins' && { color: t.onGradient }]}>
             胜场榜
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tab, type === 'streak' && styles.tabActive]}
+          style={[
+            styles.tab,
+            { backgroundColor: t.card, borderColor: t.border },
+            type === 'streak' && { backgroundColor: t.primary, borderColor: t.primary },
+          ]}
           onPress={() => setType('streak')}
         >
-          <Text style={[styles.tabText, type === 'streak' && styles.tabTextActive]}>
+          <Text style={[styles.tabText, { color: t.textSecondary }, type === 'streak' && { color: t.onGradient }]}>
             连胜榜
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tab, type === 'rank' && styles.tabActive]}
+          style={[
+            styles.tab,
+            { backgroundColor: t.card, borderColor: t.border },
+            type === 'rank' && { backgroundColor: t.primary, borderColor: t.primary },
+          ]}
           onPress={() => setType('rank')}
         >
-          <Text style={[styles.tabText, type === 'rank' && styles.tabTextActive]}>
+          <Text style={[styles.tabText, { color: t.textSecondary }, type === 'rank' && { color: t.onGradient }]}>
             段位榜
           </Text>
         </TouchableOpacity>
@@ -150,13 +164,13 @@ export function LeaderboardScreen() {
       {/* 列表 */}
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#6200EE" />
+          <ActivityIndicator size="large" color={t.primary} />
         </View>
       ) : data.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyEmoji}>🏆</Text>
-          <Text style={styles.emptyText}>榜单还是空的</Text>
-          <Text style={styles.emptyHint}>打完第一局，这里就会出现你的名字</Text>
+          <Text style={[styles.emptyText, { color: t.text }]}>榜单还是空的</Text>
+          <Text style={[styles.emptyHint, { color: t.textMuted }]}>打完第一局，这里就会出现你的名字</Text>
         </View>
       ) : (
         <View style={styles.listWrapper}>
@@ -165,29 +179,34 @@ export function LeaderboardScreen() {
             renderItem={renderItem}
             keyExtractor={(item) => item.user.id}
             refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={t.primary} />
             }
             contentContainerStyle={styles.listContent}
           />
 
           {/* 我的名次：排在榜单之外也能看到自己 */}
           {myRank && (
-            <View style={[styles.myRankBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+            <View
+              style={[
+                styles.myRankBar,
+                { backgroundColor: t.primarySoft, borderTopColor: t.primary, paddingBottom: Math.max(insets.bottom, 12) },
+              ]}
+            >
               {myRank.position > 0 ? (
                 <>
                   <View style={styles.rankContainer}>
-                    <Text style={styles.rankText}>{myRank.position}</Text>
+                    <Text style={[styles.rankText, { color: t.primary }]}>{myRank.position}</Text>
                   </View>
                   <View style={styles.userInfo}>
-                    <Text style={styles.nickname}>我的名次</Text>
-                    <Text style={styles.detailText}>
+                    <Text style={[styles.nickname, { color: t.primary }]}>我的名次</Text>
+                    <Text style={[styles.detailText, { color: t.textSecondary }]}>
                       共 {myRank.totalPlayers} 名玩家上榜
                     </Text>
                   </View>
                   <View style={styles.statContainer}>{renderStat(myRank.stats)}</View>
                 </>
               ) : (
-                <Text style={styles.myRankEmpty}>还没有战绩，打一局就能上榜啦 🎮</Text>
+                <Text style={[styles.myRankEmpty, { color: t.primary }]}>还没有战绩，打一局就能上榜啦 🎮</Text>
               )}
             </View>
           )}

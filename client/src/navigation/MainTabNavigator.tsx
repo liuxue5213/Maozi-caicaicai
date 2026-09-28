@@ -5,6 +5,7 @@ import { HomeScreen } from '../screens/HomeScreen';
 import { LeaderboardScreen } from '../screens/LeaderboardScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
 import { FriendsScreen } from '../screens/FriendsScreen';
+import { useTheme } from '../theme';
 
 const Tab = createBottomTabNavigator();
 
@@ -13,13 +14,14 @@ const TabIcon = ({ name, focused }: { name: string; focused: boolean }) => (
 );
 
 export function MainTabNavigator() {
+  const t = useTheme();
   return (
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarStyle: styles.tabBar,
-        tabBarActiveTintColor: '#6200EE',
-        tabBarInactiveTintColor: '#999',
+        tabBarStyle: [styles.tabBar, { backgroundColor: t.card, borderTopColor: t.border }],
+        tabBarActiveTintColor: t.primary,
+        tabBarInactiveTintColor: t.textMuted,
       }}
     >
       <Tab.Screen

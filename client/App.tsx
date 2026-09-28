@@ -1,22 +1,28 @@
 import React, { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, DarkTheme, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useAuthStore } from './src/store/authStore';
 import { AuthScreen } from './src/screens/AuthScreen';
 import { MainTabNavigator } from './src/navigation/MainTabNavigator';
 import { GameScreen } from './src/screens/GameScreen';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, useColorScheme } from 'react-native';
 import { api } from './src/api/client';
+import { useThemeStore, darkTheme, lightTheme } from './src/theme';
 
 const Stack = createNativeStackNavigator();
 
 export default function App() {
   const { isAuthenticated, initialize } = useAuthStore();
+  const scheme = useColorScheme();
+  const themePref = useThemeStore((s) => s.pref);
+  const loadThemePref = useThemeStore((s) => s.load);
+  const dark = themePref === 'dark' || (themePref === 'system' && scheme === 'dark');
 
   useEffect(() => {
+    loadThemePref();
     const init = async () => {
       await initialize();
       const { token, logout, setUserAndStats } = useAuthStore.getState();
@@ -42,11 +48,15 @@ export default function App() {
     init();
   }, []);
 
+  const navTheme = dark
+    ? { ...DarkTheme, colors: { ...DarkTheme.colors, background: darkTheme.background, card: darkTheme.card, border: darkTheme.border, text: darkTheme.text, primary: darkTheme.primary } }
+    : { ...DefaultTheme, colors: { ...DefaultTheme.colors, background: lightTheme.background, card: lightTheme.card, border: lightTheme.border, text: lightTheme.text, primary: lightTheme.primary } };
+
   return (
     <GestureHandlerRootView style={styles.container}>
       <SafeAreaProvider>
-        <NavigationContainer>
-          <StatusBar style="auto" />
+        <NavigationContainer theme={navTheme}>
+          <StatusBar style={dark ? 'light' : 'dark'} />
           <Stack.Navigator screenOptions={{ headerShown: false }}>
             {!isAuthenticated ? (
               <Stack.Screen name="Auth" component={AuthScreen} />

@@ -14,6 +14,7 @@ import { GameMode, GAME_MODE_LABELS, AI_DIFFICULTY_LABELS, AiDifficulty, getRank
 import { useAuthStore } from '../store/authStore';
 import { useNavigation } from '@react-navigation/native';
 import { api } from '../api/client';
+import { useTheme } from '../theme';
 
 interface HomeScreenProps {
   navigation?: any;
@@ -22,6 +23,7 @@ interface HomeScreenProps {
 export function HomeScreen({ navigation }: HomeScreenProps) {
   const nav = useNavigation();
   const insets = useSafeAreaInsets();
+  const t = useTheme();
   const { user, stats } = useAuthStore();
   const [onlineCount, setOnlineCount] = useState(0);
   const [difficulty, setDifficulty] = useState<AiDifficulty>('normal');
@@ -69,21 +71,21 @@ export function HomeScreen({ navigation }: HomeScreenProps) {
   };
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={[styles.container, { backgroundColor: t.background }]}>
       <View style={[styles.header, { paddingTop: insets.top + 20 }]}>
         <View style={styles.headerRow}>
           <Text style={styles.headerAvatar}>{user?.avatar || '🐱'}</Text>
           <View style={styles.headerTextCol}>
-            <Text style={styles.welcome}>你好，{user?.nickname || '玩家'} 👋</Text>
-            <Text style={styles.onlineCount}>在线人数: {onlineCount}</Text>
+            <Text style={[styles.welcome, { color: t.text }]}>你好，{user?.nickname || '玩家'} 👋</Text>
+            <Text style={[styles.onlineCount, { color: t.success }]}>在线人数: {onlineCount}</Text>
           </View>
         </View>
       </View>
 
       {/* 玩家信息卡片 */}
-      <View style={styles.statsCard}>
+      <View style={[styles.statsCard, { backgroundColor: t.card, borderColor: t.border }]}>
         <View style={styles.cardTitleRow}>
-          <Text style={styles.cardTitle}>我的战绩</Text>
+          <Text style={[styles.cardTitle, { color: t.textSecondary }]}>我的战绩</Text>
           {stats && (
             <Text style={[styles.tierBadge, { color: getRankTier(stats.rank).color }]}>
               {getRankTier(stats.rank).emoji} {getRankTier(stats.rank).name} · {stats.rank}分
@@ -92,40 +94,40 @@ export function HomeScreen({ navigation }: HomeScreenProps) {
         </View>
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{stats?.totalGames || 0}</Text>
-            <Text style={styles.statLabel}>总场次</Text>
+            <Text style={[styles.statValue, { color: t.text }]}>{stats?.totalGames || 0}</Text>
+            <Text style={[styles.statLabel, { color: t.textSecondary }]}>总场次</Text>
           </View>
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{stats?.wins || 0}</Text>
-            <Text style={styles.statLabel}>胜场</Text>
+            <Text style={[styles.statValue, { color: t.text }]}>{stats?.wins || 0}</Text>
+            <Text style={[styles.statLabel, { color: t.textSecondary }]}>胜场</Text>
           </View>
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>
+            <Text style={[styles.statValue, { color: t.text }]}>
               {stats?.totalGames
                 ? Math.round((stats.wins / stats.totalGames) * 100)
                 : 0}%
             </Text>
-            <Text style={styles.statLabel}>胜率</Text>
+            <Text style={[styles.statLabel, { color: t.textSecondary }]}>胜率</Text>
           </View>
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{stats?.bestWinStreak || 0}</Text>
-            <Text style={styles.statLabel}>最高连胜</Text>
+            <Text style={[styles.statValue, { color: t.text }]}>{stats?.bestWinStreak || 0}</Text>
+            <Text style={[styles.statLabel, { color: t.textSecondary }]}>最高连胜</Text>
           </View>
         </View>
       </View>
 
       {/* 联网对战 */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>⚡ 联网对战</Text>
-        <Text style={styles.sectionDesc}>与真实玩家实时匹配对战</Text>
+        <Text style={[styles.sectionTitle, { color: t.text }]}>⚡ 联网对战</Text>
+        <Text style={[styles.sectionDesc, { color: t.textSecondary }]}>与真实玩家实时匹配对战</Text>
         <View style={styles.modeGrid}>
           {Object.entries(GAME_MODE_LABELS).map(([mode, label]) => (
             <TouchableOpacity
               key={mode}
-              style={styles.modeButtonOnline}
+              style={[styles.modeButtonOnline, { backgroundColor: t.primary }]}
               onPress={() => handleStartGame(Number(mode) as GameMode)}
             >
-              <Text style={styles.modeButtonText}>{label}</Text>
+              <Text style={[styles.modeButtonText, { color: t.onGradient }]}>{label}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -133,19 +135,24 @@ export function HomeScreen({ navigation }: HomeScreenProps) {
 
       {/* 人机对战 */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>🤖 人机对战</Text>
-        <Text style={styles.sectionDesc}>与 AI 练习技巧</Text>
+        <Text style={[styles.sectionTitle, { color: t.text }]}>🤖 人机对战</Text>
+        <Text style={[styles.sectionDesc, { color: t.textSecondary }]}>与 AI 练习技巧</Text>
         <View style={styles.difficultyRow}>
           {(Object.keys(AI_DIFFICULTY_LABELS) as AiDifficulty[]).map((d) => (
             <TouchableOpacity
               key={d}
-              style={[styles.difficultyButton, difficulty === d && styles.difficultyButtonActive]}
+              style={[
+                styles.difficultyButton,
+                { backgroundColor: t.card, borderColor: t.border },
+                difficulty === d && { backgroundColor: t.primary, borderColor: t.primary },
+              ]}
               onPress={() => setDifficulty(d)}
             >
               <Text
                 style={[
                   styles.difficultyButtonText,
-                  difficulty === d && styles.difficultyButtonTextActive,
+                  { color: t.textSecondary },
+                  difficulty === d && { color: t.onPrimary, fontWeight: 'bold' as const },
                 ]}
               >
                 {AI_DIFFICULTY_LABELS[d]}
@@ -157,10 +164,10 @@ export function HomeScreen({ navigation }: HomeScreenProps) {
           {[GameMode.BEST_OF_3, GameMode.BEST_OF_5].map((mode) => (
             <TouchableOpacity
               key={mode}
-              style={styles.modeButtonAi}
+              style={[styles.modeButtonAi, { backgroundColor: t.accent }]}
               onPress={() => handleStartAiGame(mode)}
             >
-              <Text style={styles.modeButtonText}>{GAME_MODE_LABELS[mode]}</Text>
+              <Text style={[styles.modeButtonText, { color: t.onGradient }]}>{GAME_MODE_LABELS[mode]}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -168,17 +175,17 @@ export function HomeScreen({ navigation }: HomeScreenProps) {
 
       {/* 私密房间（邀请码对战） */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>🔒 私密房间</Text>
-        <Text style={styles.sectionDesc}>创建房间把邀请码发给好友，1 对 1 私下对决</Text>
+        <Text style={[styles.sectionTitle, { color: t.text }]}>🔒 私密房间</Text>
+        <Text style={[styles.sectionDesc, { color: t.textSecondary }]}>创建房间把邀请码发给好友，1 对 1 私下对决</Text>
         <View style={styles.modeGrid}>
           <TouchableOpacity
-            style={styles.modeButtonPrivate}
+            style={[styles.modeButtonPrivate, { backgroundColor: '#FF7043' }]}
             onPress={() => setPrivateModal('create')}
           >
-            <Text style={styles.modeButtonText}>创建房间</Text>
+            <Text style={[styles.modeButtonText, { color: '#fff' }]}>创建房间</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.modeButtonPrivateSecondary}
+            style={[styles.modeButtonPrivateSecondary, { backgroundColor: t.card, borderColor: '#FF7043' }]}
             onPress={() => setPrivateModal('join')}
           >
             <Text style={styles.modeButtonPrivateSecondaryText}>输入邀请码加入</Text>
@@ -194,45 +201,48 @@ export function HomeScreen({ navigation }: HomeScreenProps) {
         onRequestClose={() => setPrivateModal(null)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, { backgroundColor: t.card }]}>
             {privateModal === 'create' ? (
               <>
-                <Text style={styles.modalTitle}>选择对局模式</Text>
-                <Text style={styles.modalDesc}>创建后把邀请码发给好友即可开局</Text>
+                <Text style={[styles.modalTitle, { color: t.text }]}>选择对局模式</Text>
+                <Text style={[styles.modalDesc, { color: t.textMuted }]}>创建后把邀请码发给好友即可开局</Text>
                 <View style={styles.modalModeGrid}>
                   {Object.entries(GAME_MODE_LABELS).map(([mode, label]) => (
                     <TouchableOpacity
                       key={mode}
-                      style={styles.modalModeButton}
+                      style={[styles.modalModeButton, { backgroundColor: t.primarySoft, borderColor: t.primary }]}
                       onPress={() => handleCreatePrivateRoom(Number(mode) as GameMode)}
                     >
-                      <Text style={styles.modalModeButtonText}>{label}</Text>
+                      <Text style={[styles.modalModeButtonText, { color: t.primary }]}>{label}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
               </>
             ) : (
               <>
-                <Text style={styles.modalTitle}>输入邀请码</Text>
-                <Text style={styles.modalDesc}>向房主要一个 4 位邀请码</Text>
+                <Text style={[styles.modalTitle, { color: t.text }]}>输入邀请码</Text>
+                <Text style={[styles.modalDesc, { color: t.textMuted }]}>向房主要一个 4 位邀请码</Text>
                 <TextInput
-                  style={styles.codeInput}
+                  style={[
+                    styles.codeInput,
+                    { backgroundColor: t.inputBg, borderColor: t.primary, color: t.text },
+                  ]}
                   value={joinCode}
                   onChangeText={(text) => setJoinCode(text.toUpperCase())}
                   placeholder="如：A7XK"
-                  placeholderTextColor="#bbb"
+                  placeholderTextColor={t.textMuted}
                   autoCapitalize="characters"
                   autoCorrect={false}
                   maxLength={4}
                   autoFocus
                 />
-                <TouchableOpacity style={styles.modeButtonPrivate} onPress={handleJoinPrivateRoom}>
-                  <Text style={styles.modeButtonText}>加入房间</Text>
+                <TouchableOpacity style={[styles.modeButtonPrivate, { backgroundColor: '#FF7043' }]} onPress={handleJoinPrivateRoom}>
+                  <Text style={[styles.modeButtonText, { color: '#fff' }]}>加入房间</Text>
                 </TouchableOpacity>
               </>
             )}
             <TouchableOpacity style={styles.modalCancel} onPress={() => setPrivateModal(null)}>
-              <Text style={styles.modalCancelText}>取消</Text>
+              <Text style={[styles.modalCancelText, { color: t.textMuted }]}>取消</Text>
             </TouchableOpacity>
           </View>
         </View>

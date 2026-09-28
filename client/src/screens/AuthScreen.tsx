@@ -13,8 +13,10 @@ import {
 } from 'react-native';
 import { api } from '../api/client';
 import { useAuthStore } from '../store/authStore';
+import { useTheme } from '../theme';
 
 export function AuthScreen() {
+  const t = useTheme();
   const [isLogin, setIsLogin] = useState(true);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -59,20 +61,21 @@ export function AuthScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: t.background }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
           <Text style={styles.emoji}>✊✌️✋</Text>
-          <Text style={styles.title}>帽子猜猜猜</Text>
-          <Text style={styles.subtitle}>注册账号，开始对战</Text>
+          <Text style={[styles.title, { color: t.text }]}>帽子猜猜猜</Text>
+          <Text style={[styles.subtitle, { color: t.textSecondary }]}>注册账号，开始对战</Text>
         </View>
 
         <View style={styles.form}>
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: t.inputBg, borderColor: t.border, color: t.text }]}
             placeholder="用户名"
+            placeholderTextColor={t.textMuted}
             value={username}
             onChangeText={setUsername}
             autoCapitalize="none"
@@ -80,8 +83,9 @@ export function AuthScreen() {
           />
 
           <TextInput
-            style={styles.input}
+            style={[styles.input, { backgroundColor: t.inputBg, borderColor: t.border, color: t.text }]}
             placeholder="密码"
+            placeholderTextColor={t.textMuted}
             value={password}
             onChangeText={setPassword}
             secureTextEntry
@@ -89,22 +93,23 @@ export function AuthScreen() {
 
           {!isLogin && (
             <TextInput
-              style={styles.input}
+              style={[styles.input, { backgroundColor: t.inputBg, borderColor: t.border, color: t.text }]}
               placeholder="昵称"
+              placeholderTextColor={t.textMuted}
               value={nickname}
               onChangeText={setNickname}
             />
           )}
 
           <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
+            style={[styles.button, { backgroundColor: t.primary }, loading && styles.buttonDisabled]}
             onPress={handleSubmit}
             disabled={loading}
           >
             {loading ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator color={t.onGradient} />
             ) : (
-              <Text style={styles.buttonText}>
+              <Text style={[styles.buttonText, { color: t.onGradient }]}>
                 {isLogin ? '登录' : '注册'}
               </Text>
             )}
@@ -114,7 +119,7 @@ export function AuthScreen() {
             style={styles.switchButton}
             onPress={() => setIsLogin(!isLogin)}
           >
-            <Text style={styles.switchText}>
+            <Text style={[styles.switchText, { color: t.primary }]}>
               {isLogin ? '没有账号？去注册' : '已有账号？去登录'}
             </Text>
           </TouchableOpacity>

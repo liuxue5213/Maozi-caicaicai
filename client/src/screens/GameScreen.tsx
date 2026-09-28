@@ -17,6 +17,7 @@ import { GameChoice, GameMode, GamePhase, AiDifficulty, RoundResult, GAME_EMOJIS
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useAuthStore } from '../store/authStore';
 import { playSound } from '../utils/sounds';
+import { useTheme } from '../theme';
 
 interface GameParams {
   mode: GameMode;
@@ -140,6 +141,7 @@ export function GameScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const insets = useSafeAreaInsets();
+  const t = useTheme();
   const { mode, matchType, difficulty, privateAction, roomCode, targetId } = (route.params || {
     mode: GameMode.BEST_OF_3,
     matchType: 'online',
@@ -561,19 +563,19 @@ export function GameScreen() {
           return (
             <View style={styles.centerContent}>
               <Text style={styles.phaseEmoji}>🔒</Text>
-              <Text style={styles.phaseText}>等待好友加入</Text>
-              <View style={styles.roomCodeCard}>
-                <Text style={styles.roomCodeLabel}>房间邀请码</Text>
-                <Text style={styles.roomCodeText}>{privateRoomCode}</Text>
+              <Text style={[styles.phaseText, { color: t.text }]}>等待好友加入</Text>
+              <View style={[styles.roomCodeCard, { backgroundColor: t.card, borderColor: t.primary }]}>
+                <Text style={[styles.roomCodeLabel, { color: t.textMuted }]}>房间邀请码</Text>
+                <Text style={[styles.roomCodeText, { color: t.primary }]}>{privateRoomCode}</Text>
               </View>
-              <Text style={styles.hintText}>把邀请码发给好友，输入后立即开局</Text>
+              <Text style={[styles.hintText, { color: t.textMuted }]}>把邀请码发给好友，输入后立即开局</Text>
             </View>
           );
         }
         return (
           <View style={styles.centerContent}>
-            <ActivityIndicator size="large" color="#6200EE" />
-            <Text style={styles.phaseText}>
+            <ActivityIndicator size="large" color={t.primary} />
+            <Text style={[styles.phaseText, { color: t.text }]}>
               {matchType === 'challenge'
                 ? '等待好友接受约战...'
                 : matchType === 'friend-game'
@@ -584,13 +586,13 @@ export function GameScreen() {
             </Text>
             {isMatching && matchType === 'online' && (
               <TouchableOpacity
-                style={styles.cancelMatchButton}
+                style={[styles.cancelMatchButton, { backgroundColor: t.card, borderColor: t.border }]}
                 onPress={() => {
                   ws.cancelMatching();
                   navigation.goBack();
                 }}
               >
-                <Text style={styles.cancelMatchButtonText}>取消匹配</Text>
+                <Text style={[styles.cancelMatchButtonText, { color: t.textSecondary }]}>取消匹配</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -600,8 +602,8 @@ export function GameScreen() {
         return (
           <View style={styles.centerContent}>
             <Text style={styles.phaseEmoji}>⚔️</Text>
-            <Text style={styles.phaseText}>准备开始</Text>
-            <Text style={styles.timerText}>{Math.ceil(timeRemaining / 1000)}s</Text>
+            <Text style={[styles.phaseText, { color: t.text }]}>准备开始</Text>
+            <Text style={[styles.timerText, { color: t.warning }]}>{Math.ceil(timeRemaining / 1000)}s</Text>
           </View>
         );
 
@@ -610,25 +612,25 @@ export function GameScreen() {
           <View style={styles.selectingContent}>
             {/* 对手选择 */}
             <View style={styles.opponentArea}>
-              <View style={styles.choiceCircle}>
+              <View style={[styles.choiceCircle, { backgroundColor: t.card, borderColor: t.border }]}>
                 <Text style={styles.choiceEmoji}>{getChoiceEmoji(opponentChoice)}</Text>
               </View>
-              <Text style={styles.playerName}>{opponentNickname || '对手'}</Text>
+              <Text style={[styles.playerName, { color: t.textSecondary }]}>{opponentNickname || '对手'}</Text>
             </View>
 
             {/* 倒计时进度条 */}
-            <View style={styles.timerBar}>
+            <View style={[styles.timerBar, { backgroundColor: t.border }]}>
               <View
                 style={[
                   styles.timerProgress,
                   {
                     width: `${Math.min(100, (timeRemaining / phaseTotalRef.current) * 100)}%`,
-                    backgroundColor: timerUrgent ? '#E53935' : '#FF9800',
+                    backgroundColor: timerUrgent ? t.danger : t.warning,
                   },
                 ]}
               />
             </View>
-            <Text style={[styles.timerText, styles.timerTextSmall, timerUrgent && styles.timerTextUrgent]}>
+            <Text style={[styles.timerText, styles.timerTextSmall, { color: timerUrgent ? t.danger : t.warning }]}>
               {Math.ceil(timeRemaining / 1000)}s
             </Text>
 
@@ -642,7 +644,8 @@ export function GameScreen() {
                     key={choice}
                     style={[
                       styles.choiceOption,
-                      isSelected && styles.choiceOptionSelected,
+                      { backgroundColor: t.card, borderColor: t.border },
+                      isSelected && { borderColor: t.primary, backgroundColor: t.primarySoft, borderWidth: 3 },
                       isLocked && !isSelected && styles.choiceOptionDimmed,
                     ]}
                     onPress={() => confirmChoice(choice)}
@@ -653,7 +656,8 @@ export function GameScreen() {
                     <Text
                       style={[
                         styles.choiceOptionText,
-                        isSelected && styles.choiceOptionTextSelected,
+                        { color: t.textSecondary },
+                        isSelected && { color: t.primary, fontWeight: 'bold' as const },
                       ]}
                     >
                       {getChoiceText(choice)}
@@ -662,7 +666,7 @@ export function GameScreen() {
                 );
               })}
             </View>
-            <Text style={styles.hintText}>
+            <Text style={[styles.hintText, { color: t.textMuted }]}>
               {playerChoice ? '已选择，等待对手出拳...' : '点击手势立即出拳'}
             </Text>
           </View>
@@ -675,39 +679,39 @@ export function GameScreen() {
         const isPump = revealStage === 'pump';
         return (
           <View style={styles.centerContent}>
-            <Text style={styles.roundText}>第 {roundNumber} 轮结算</Text>
+            <Text style={[styles.roundText, { color: t.textSecondary }]}>第 {roundNumber} 轮结算</Text>
             <Animated.View
               style={[
                 styles.settlementRow,
                 { transform: [{ scale: isPump ? pumpAnim : revealAnim }] },
               ]}
             >
-              <View style={[styles.choiceCircle, styles.choiceCircleLarge]}>
+              <View style={[styles.choiceCircle, styles.choiceCircleLarge, { backgroundColor: t.card, borderColor: t.border }]}>
                 <Text style={[styles.choiceEmoji, styles.choiceEmojiLarge]}>
                   {isPump ? '✊' : getChoiceEmoji(playerChoice)}
                 </Text>
               </View>
-              <Text style={styles.versusText}>VS</Text>
-              <View style={[styles.choiceCircle, styles.choiceCircleLarge]}>
+              <Text style={[styles.versusText, { color: t.textMuted }]}>VS</Text>
+              <View style={[styles.choiceCircle, styles.choiceCircleLarge, { backgroundColor: t.card, borderColor: t.border }]}>
                 <Text style={[styles.choiceEmoji, styles.choiceEmojiLarge]}>
                   {isPump ? '✊' : getChoiceEmoji(opponentChoice)}
                 </Text>
               </View>
             </Animated.View>
             <View style={styles.settlementNames}>
-              <Text style={styles.playerName}>{user?.nickname || '我'}</Text>
-              <Text style={styles.playerName}>{opponentNickname || '对手'}</Text>
+              <Text style={[styles.playerName, { color: t.textSecondary }]}>{user?.nickname || '我'}</Text>
+              <Text style={[styles.playerName, { color: t.textSecondary }]}>{opponentNickname || '对手'}</Text>
             </View>
-            {isPump && <Text style={styles.pumpText}>{PUMP_BEATS[pumpBeat]}！</Text>}
-            {!isPump && lastResult === RoundResult.DRAW && <Text style={styles.phaseText}>平局</Text>}
+            {isPump && <Text style={[styles.pumpText, { color: t.primary }]}>{PUMP_BEATS[pumpBeat]}！</Text>}
+            {!isPump && lastResult === RoundResult.DRAW && <Text style={[styles.phaseText, { color: t.text }]}>平局</Text>}
             {!isPump && lastResult === RoundResult.WIN && (
-              <Text style={[styles.phaseText, styles.winText]}>这一局你赢了！</Text>
+              <Text style={[styles.phaseText, { color: t.success }]}>这一局你赢了！</Text>
             )}
             {!isPump && lastResult === RoundResult.LOSE && (
-              <Text style={[styles.phaseText, styles.loseText]}>这一局你输了</Text>
+              <Text style={[styles.phaseText, { color: t.danger }]}>这一局你输了</Text>
             )}
-            {!isPump && !lastResult && <Text style={styles.phaseText}>结算中...</Text>}
-            <Text style={styles.scoreText}>
+            {!isPump && !lastResult && <Text style={[styles.phaseText, { color: t.text }]}>结算中...</Text>}
+            <Text style={[styles.scoreText, { color: t.text }]}>
               {playerScore} : {opponentScore}
             </Text>
           </View>
@@ -717,37 +721,43 @@ export function GameScreen() {
       case GamePhase.BREAK:
         return (
           <View style={styles.centerContent}>
-            <View style={styles.scoreBoard}>
-              <Text style={styles.scoreText}>
+            <View style={[styles.scoreBoard, { backgroundColor: t.card, borderColor: t.border }]}>
+              <Text style={[styles.scoreText, { color: t.text }]}>
                 {playerScore} : {opponentScore}
               </Text>
             </View>
-            <Text style={styles.phaseText}>准备下一轮...</Text>
+            <Text style={[styles.phaseText, { color: t.text }]}>准备下一轮...</Text>
           </View>
         );
 
       case GamePhase.FINISHED:
         return (
-          <View style={styles.gameOverCard}>
+          <View style={[styles.gameOverCard, { backgroundColor: t.card, borderColor: t.border }]}>
             {/* 整局获胜撒彩带 */}
             {gameResult?.won && !gameResult?.isDraw && <Confetti />}
             <Text style={styles.resultEmoji}>
               {gameResult?.isDraw ? '🤝' : gameResult?.won ? '🎉' : '😢'}
             </Text>
-            <Text style={[styles.resultText, !gameResult?.isDraw && (gameResult?.won ? styles.winText : styles.loseText)]}>
+            <Text
+              style={[
+                styles.resultText,
+                { color: t.text },
+                !gameResult?.isDraw && { color: gameResult?.won ? t.success : t.danger },
+              ]}
+            >
               {gameResult?.isDraw ? '平局！' : gameResult?.won ? '你赢了！' : '你输了...'}
             </Text>
-            <Text style={styles.finalScore}>
+            <Text style={[styles.finalScore, { color: t.textSecondary }]}>
               {playerScore} : {opponentScore}
             </Text>
             {rankDelta !== null && rankDelta !== 0 && (
               <View
                 style={[
                   styles.rankDeltaChip,
-                  { backgroundColor: rankDelta > 0 ? '#E8F5E9' : '#FFEBEE' },
+                  { backgroundColor: rankDelta > 0 ? t.successSoft : t.dangerSoft },
                 ]}
               >
-                <Text style={[styles.rankDeltaText, { color: rankDelta > 0 ? '#2E7D32' : '#C62828' }]}>
+                <Text style={[styles.rankDeltaText, { color: rankDelta > 0 ? t.success : t.danger }]}>
                   段位分 {rankDelta > 0 ? '+' : ''}
                   {rankDelta}
                 </Text>
@@ -757,7 +767,7 @@ export function GameScreen() {
               {/* 被约战方（接管对局）与凭码加入者没有"再来一局"，返回好友页重新发起 */}
               {!(matchType === 'friend-game' || (matchType === 'private' && privateAction === 'join')) && (
                 <TouchableOpacity
-                  style={styles.gameOverButton}
+                  style={[styles.gameOverButton, { backgroundColor: t.primary }]}
                   onPress={() => {
                     // 私密房间：重置后重新建房（新的邀请码）；约战：重发邀请；在线/AI：重新匹配
                     if (matchType === 'private' || matchType === 'challenge') privateInitiatedRef.current = false;
@@ -765,7 +775,7 @@ export function GameScreen() {
                     setPhase(GamePhase.WAITING);
                   }}
                 >
-                  <Text style={styles.gameOverButtonText}>
+                  <Text style={[styles.gameOverButtonText, { color: t.onGradient }]}>
                     {matchType === 'private'
                       ? '再开一局'
                       : matchType === 'challenge'
@@ -775,10 +785,10 @@ export function GameScreen() {
                 </TouchableOpacity>
               )}
               <TouchableOpacity
-                style={[styles.gameOverButton, styles.gameOverButtonSecondary]}
+                style={[styles.gameOverButton, styles.gameOverButtonSecondary, { backgroundColor: t.card, borderColor: t.border }]}
                 onPress={() => navigation.goBack()}
               >
-                <Text style={[styles.gameOverButtonText, styles.gameOverButtonTextSecondary]}>
+                <Text style={[styles.gameOverButtonText, { color: t.text }]}>
                   返回
                 </Text>
               </TouchableOpacity>
@@ -815,9 +825,9 @@ export function GameScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: t.background }]}>
       {/* 顶部渐变信息栏 */}
-      <LinearGradient colors={['#6200EE', '#7C4DFF']} style={[styles.topBar, { paddingTop: insets.top + 10 }]}>
+      <LinearGradient colors={t.gradient} style={[styles.topBar, { paddingTop: insets.top + 10 }]}>
         <View style={styles.topBarRow}>
           <TouchableOpacity onPress={handleQuitPress}>
             <Text style={styles.backButton}>← 退出</Text>
@@ -849,8 +859,8 @@ export function GameScreen() {
 
       {/* 突然死亡提示 */}
       {suddenDeath && phase !== GamePhase.WAITING && phase !== GamePhase.FINISHED && (
-        <View style={styles.suddenDeathBanner}>
-          <Text style={styles.suddenDeathText}>
+        <View style={[styles.suddenDeathBanner, { backgroundColor: t.dangerSoft, borderColor: t.danger }]}>
+          <Text style={[styles.suddenDeathText, { color: t.danger }]}>
             🔥 突然死亡 — 下一轮分出胜负者直接赢下整场
           </Text>
         </View>
@@ -865,7 +875,7 @@ export function GameScreen() {
           {GAME_EMOJIS.map((emoji) => (
             <TouchableOpacity
               key={emoji}
-              style={styles.emojiButton}
+              style={[styles.emojiButton, { backgroundColor: t.card, borderColor: t.border }]}
               onPress={() => handleSendEmoji(emoji)}
               activeOpacity={0.7}
             >
@@ -882,6 +892,8 @@ export function GameScreen() {
             styles.emojiBubble,
             {
               top: insets.top + 120,
+              backgroundColor: t.card,
+              borderColor: t.border,
               opacity: emojiBubbleAnim,
               transform: [
                 { scale: emojiBubbleAnim },
@@ -896,14 +908,14 @@ export function GameScreen() {
           ]}
         >
           <Text style={styles.emojiBubbleText}>{receivedEmoji}</Text>
-          <Text style={styles.emojiBubbleFrom}>{opponentNickname || '对手'}</Text>
+          <Text style={[styles.emojiBubbleFrom, { color: t.textMuted }]}>{opponentNickname || '对手'}</Text>
         </Animated.View>
       )}
 
       {/* 对手离线提示条 */}
       {opponentOffline && phase !== GamePhase.FINISHED && (
-        <View style={styles.offlineBanner}>
-          <Text style={styles.offlineText}>⚠️ 对手已断线，等待重连（超时将判你获胜）</Text>
+        <View style={[styles.offlineBanner, { backgroundColor: t.warningSoft, borderColor: t.warning }]}>
+          <Text style={[styles.offlineText, { color: t.warning }]}>⚠️ 对手已断线，等待重连（超时将判你获胜）</Text>
         </View>
       )}
     </View>
