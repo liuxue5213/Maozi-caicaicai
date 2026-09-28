@@ -104,6 +104,12 @@ export const api = {
       body: { nickname },
     }),
 
+  updateAvatar: (avatar: string) =>
+    apiRequest<{ avatar: string }>('/user/avatar', {
+      method: 'PUT',
+      body: { avatar },
+    }),
+
   // 排行榜
   getLeaderboard: (type: 'wins' | 'streak' | 'rank' = 'wins', limit = 100) =>
     apiRequest(`/leaderboard?type=${type}&limit=${limit}`),

@@ -15,6 +15,7 @@ interface AuthState {
   /** 仅刷新用户信息与战绩（保留 token），用于启动时向服务器校验后同步 */
   setUserAndStats: (user: User, stats: UserStats) => void;
   updateNickname: (nickname: string) => void;
+  updateAvatar: (avatar: string) => void;
   logout: () => void;
   initialize: () => Promise<void>;
 }
@@ -74,6 +75,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // 异步持久化，失败时仅记录
       AsyncStorage.setItem(USER_KEY, JSON.stringify(updatedUser)).catch((err) =>
         console.error('[AuthStore] 保存昵称失败:', err)
+      );
+    }
+  },
+
+  updateAvatar: (avatar) => {
+    const { user } = get();
+    if (user) {
+      const updatedUser = { ...user, avatar };
+      set({ user: updatedUser });
+      AsyncStorage.setItem(USER_KEY, JSON.stringify(updatedUser)).catch((err) =>
+        console.error('[AuthStore] 保存头像失败:', err)
       );
     }
   },

@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { db } from '../db/database';
 import { authMiddleware } from '../middleware/auth';
+import { AVATAR_PRESETS } from '@maozi/shared';
 
 export const userRouter = Router();
 
@@ -41,6 +42,18 @@ userRouter.put('/nickname', (req: any, res: Response) => {
 
   db.updateUserNickname(req.userId!, nickname);
   res.json({ success: true, data: { nickname } });
+});
+
+// 更新头像（仅允许预设 emoji 头像）
+userRouter.put('/avatar', (req: any, res: Response) => {
+  const { avatar } = req.body;
+  if (!avatar || !AVATAR_PRESETS.includes(avatar)) {
+    res.status(400).json({ success: false, error: '无效的头像' });
+    return;
+  }
+
+  db.updateUserAvatar(req.userId!, avatar);
+  res.json({ success: true, data: { avatar } });
 });
 
 // 获取游戏记录（按玩家视角返回：对手昵称、双方比分、胜负）

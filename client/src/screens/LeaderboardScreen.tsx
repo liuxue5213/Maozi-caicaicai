@@ -102,6 +102,7 @@ export function LeaderboardScreen() {
             <Text style={styles.rankText}>{item.rank}</Text>
           )}
         </View>
+        <Text style={styles.itemAvatar}>{item.user.avatar || '🙂'}</Text>
         <View style={styles.userInfo}>
           <Text style={styles.nickname}>{item.user.nickname}</Text>
           <Text style={styles.detailText}>
@@ -150,6 +151,12 @@ export function LeaderboardScreen() {
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#6200EE" />
+        </View>
+      ) : data.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyEmoji}>🏆</Text>
+          <Text style={styles.emptyText}>榜单还是空的</Text>
+          <Text style={styles.emptyHint}>打完第一局，这里就会出现你的名字</Text>
         </View>
       ) : (
         <View style={styles.listWrapper}>
@@ -227,6 +234,27 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  emptyContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+  },
+  emptyEmoji: {
+    fontSize: 56,
+    marginBottom: 12,
+  },
+  emptyText: {
+    color: '#333',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  emptyHint: {
+    color: '#999',
+    fontSize: 14,
+    marginTop: 6,
+    textAlign: 'center',
+  },
   listWrapper: {
     flex: 1,
   },
@@ -270,6 +298,10 @@ const styles = StyleSheet.create({
   rankContainer: {
     width: 48,
     alignItems: 'center',
+  },
+  itemAvatar: {
+    fontSize: 26,
+    marginLeft: 4,
   },
   rankEmoji: {
     fontSize: 24,

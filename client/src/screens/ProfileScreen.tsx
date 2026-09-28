@@ -8,9 +8,11 @@ import {
   TextInput,
   Switch,
   Alert,
+  Modal,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { GAME_MODE_LABELS, getRankTier } from '@maozi/shared';
+import { GAME_MODE_LABELS, getRankTier, AVATAR_PRESETS, DEFAULT_AVATAR } from '@maozi/shared';
 import { useAuthStore } from '../store/authStore';
 import { api } from '../api/client';
 import { getGameCountTitle, getWinStreakTitle } from '../utils/titles';
@@ -35,11 +37,14 @@ function formatTime(ts: number): string {
 }
 
 export function ProfileScreen() {
-  const { user, stats, logout, updateNickname } = useAuthStore();
+  const insets = useSafeAreaInsets();
+  const { user, stats, logout, updateNickname, updateAvatar } = useAuthStore();
   const [editingNickname, setEditingNickname] = useState(false);
   const [newNickname, setNewNickname] = useState(user?.nickname || '');
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [soundOn, setSoundOn] = useState(!isSoundMuted());
+  const [avatarModal, setAvatarModal] = useState(false);
+  const [savingAvatar, setSavingAvatar] = useState(false);
 
   // 每次切到"我的"页时刷新历史
   useFocusEffect(
@@ -67,6 +72,20 @@ export function ProfileScreen() {
     }
   };
 
+  const handleSelectAvatar = async (avatar: string) => {
+    if (savingAvatar) return;
+    setSavingAvatar(true);
+    try {
+      await api.updateAvatar(avatar);
+      updateAvatar(avatar);
+      setAvatarModal(false);
+    } catch (error: any) {
+      Alert.alert('错误', error.message || '头像保存失败');
+    } finally {
+      setSavingAvatar(false);
+    }
+  };
+
   const handleLogout = () => {
     Alert.alert('确认', '确定要退出登录吗？', [
       { text: '取消', style: 'cancel' },
@@ -80,12 +99,15 @@ export function ProfileScreen() {
   return (
     <ScrollView style={styles.container}>
       {/* 用户信息卡片 */}
-      <View style={styles.profileCard}>
-        <View style={styles.avatar}>
+      <View style={[styles.profileCard, { paddingTop: insets.top + 20 }]}>
+        <TouchableOpacity style={styles.avatar} activeOpacity={0.8} onPress={() => setAvatarModal(true)}>
           <Text style={styles.avatarText}>
-            {user?.nickname?.[0] || '?'}
+            {user?.avatar || user?.nickname?.[0] || DEFAULT_AVATAR}
           </Text>
-        </View>
+          <View style={styles.avatarEditBadge}>
+            <Text style={styles.avatarEditBadgeText}>✏️</Text>
+          </View>
+        </TouchableOpacity>
 
         {editingNickname ? (
           <View style={styles.editContainer}>
@@ -247,6 +269,39 @@ export function ProfileScreen() {
       <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
         <Text style={styles.logoutText}>退出登录</Text>
       </TouchableOpacity>
+
+      {/* 头像选择弹窗 */}
+      <Modal
+        visible={avatarModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAvatarModal(false)}
+      >
+        <View style={styles.avatarModalOverlay}>
+          <View style={styles.avatarModalCard}>
+            <Text style={styles.avatarModalTitle}>选择头像</Text>
+            <Text style={styles.avatarModalDesc}>选一个喜欢的形象，对手在对局里能看到</Text>
+            <View style={styles.avatarGrid}>
+              {AVATAR_PRESETS.map((avatar) => {
+                const isCurrent = user?.avatar === avatar;
+                return (
+                  <TouchableOpacity
+                    key={avatar}
+                    style={[styles.avatarCell, isCurrent && styles.avatarCellActive]}
+                    onPress={() => handleSelectAvatar(avatar)}
+                    disabled={savingAvatar}
+                  >
+                    <Text style={styles.avatarCellText}>{avatar}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <TouchableOpacity style={styles.avatarModalCancel} onPress={() => setAvatarModal(false)}>
+              <Text style={styles.avatarModalCancelText}>取消</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -278,6 +333,81 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 32,
     fontWeight: 'bold',
+  },
+  avatarEditBadge: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarEditBadgeText: {
+    fontSize: 12,
+  },
+  avatarModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+  },
+  avatarModalCard: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 24,
+  },
+  avatarModalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+    textAlign: 'center',
+  },
+  avatarModalDesc: {
+    fontSize: 13,
+    color: '#999',
+    textAlign: 'center',
+    marginTop: 6,
+    marginBottom: 16,
+  },
+  avatarGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  avatarCell: {
+    width: 60,
+    height: 60,
+    borderRadius: 14,
+    backgroundColor: '#f5f5f5',
+    borderWidth: 2,
+    borderColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarCellActive: {
+    borderColor: '#6200EE',
+    backgroundColor: '#F3E8FF',
+  },
+  avatarCellText: {
+    fontSize: 30,
+  },
+  avatarModalCancel: {
+    marginTop: 16,
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  avatarModalCancelText: {
+    color: '#999',
+    fontSize: 15,
   },
   nickname: {
     color: '#333',

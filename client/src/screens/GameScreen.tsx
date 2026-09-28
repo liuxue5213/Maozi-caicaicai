@@ -13,7 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { GameChoice, GameMode, GamePhase, AiDifficulty, RoundResult } from '@maozi/shared';
+import { GameChoice, GameMode, GamePhase, AiDifficulty, RoundResult, GAME_EMOJIS, DEFAULT_AVATAR } from '@maozi/shared';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useAuthStore } from '../store/authStore';
 import { playSound } from '../utils/sounds';
@@ -156,6 +156,9 @@ export function GameScreen() {
   const [opponentChoice, setOpponentChoice] = useState<GameChoice | null>(null);
   const [isMatching, setIsMatching] = useState(false);
   const [opponentNickname, setOpponentNickname] = useState<string>('');
+  const [opponentAvatar, setOpponentAvatar] = useState<string | null>(null);
+  /** 对手发来的快捷表情（气泡展示，短暂后自动消失） */
+  const [receivedEmoji, setReceivedEmoji] = useState<string | null>(null);
   const [gameResult, setGameResult] = useState<{ won: boolean; isDraw: boolean } | null>(null);
   const [opponentOffline, setOpponentOffline] = useState(false);
   const [roundHistory, setRoundHistory] = useState<RoundResult[]>([]);
@@ -183,6 +186,8 @@ export function GameScreen() {
   const revealAnim = useRef(new Animated.Value(0)).current;
   // 蓄力拍缩放（两个拳头上抬再落下）
   const pumpAnim = useRef(new Animated.Value(1)).current;
+  // 收到表情的气泡入场/出场
+  const emojiBubbleAnim = useRef(new Animated.Value(0)).current;
 
   // WebSocket 回调
   const handleGameStart = useCallback((payload: any) => {
@@ -202,6 +207,7 @@ export function GameScreen() {
     choiceLockedRef.current = false;
     if (payload.opponent) {
       setOpponentNickname(payload.opponent.nickname || '对手');
+      setOpponentAvatar(payload.opponent.avatar ?? null);
     }
   }, []);
 
@@ -301,6 +307,30 @@ export function GameScreen() {
     setPrivateRoomCode(null);
   }, []);
 
+  /** 收到对手表情：气泡弹出，停留约 2 秒后自动消失 */
+  const handleEmojiReceived = useCallback(
+    (payload: any) => {
+      const emoji = String(payload?.emoji || '');
+      if (!emoji) return;
+      setReceivedEmoji(emoji);
+      emojiBubbleAnim.setValue(0);
+      Animated.sequence([
+        Animated.spring(emojiBubbleAnim, { toValue: 1, useNativeDriver: true, friction: 4 }),
+        Animated.delay(1800),
+        Animated.timing(emojiBubbleAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
+      ]).start(({ finished }) => {
+        if (finished) setReceivedEmoji(null);
+      });
+    },
+    [emojiBubbleAnim]
+  );
+
+  /** 发送快捷表情（服务器侧有白名单与 1.5 秒限频） */
+  const handleSendEmoji = (emoji: string) => {
+    Haptics.selectionAsync().catch(() => {});
+    ws.sendEmoji(emoji);
+  };
+
   /** 私密房间流程出错（房间不存在/已失效等）：提示并返回 */
   const handleWsError = useCallback(
     (error: string) => {
@@ -328,6 +358,7 @@ export function GameScreen() {
     if (payload.opponent?.nickname) {
       setOpponentNickname(payload.opponent.nickname);
     }
+    setOpponentAvatar(payload.opponent?.avatar ?? null);
   }, []);
 
   // WebSocket 钩子
@@ -343,6 +374,7 @@ export function GameScreen() {
     onReconnectSuccess: handleReconnectSuccess,
     onPrivateRoomCreated: handlePrivateRoomCreated,
     onPrivateRoomJoined: handlePrivateRoomJoined,
+    onEmojiReceived: handleEmojiReceived,
     onError: handleWsError,
   });
 
@@ -520,6 +552,17 @@ export function GameScreen() {
             <Text style={styles.phaseText}>
               {isMatching ? '正在匹配对手...' : '正在连接服务器...'}
             </Text>
+            {isMatching && matchType === 'online' && (
+              <TouchableOpacity
+                style={styles.cancelMatchButton}
+                onPress={() => {
+                  ws.cancelMatching();
+                  navigation.goBack();
+                }}
+              >
+                <Text style={styles.cancelMatchButtonText}>取消匹配</Text>
+              </TouchableOpacity>
+            )}
           </View>
         );
 
@@ -750,6 +793,7 @@ export function GameScreen() {
         </View>
         <View style={styles.scoreRow}>
           <View style={styles.scoreSide}>
+            <Text style={styles.scoreAvatar}>{user?.avatar || DEFAULT_AVATAR}</Text>
             <Text style={styles.scoreName} numberOfLines={1}>
               {user?.nickname || '我'}
             </Text>
@@ -757,6 +801,7 @@ export function GameScreen() {
           </View>
           <Text style={styles.versusBig}>:</Text>
           <View style={styles.scoreSide}>
+            <Text style={styles.scoreAvatar}>{opponentAvatar || '🙂'}</Text>
             <Text style={styles.scoreName} numberOfLines={1}>
               {opponentNickname || '对手'}
             </Text>
@@ -779,6 +824,47 @@ export function GameScreen() {
 
       {/* 游戏区域 */}
       <View style={styles.gameArea}>{renderPhase()}</View>
+
+      {/* 对局内快捷表情栏 */}
+      {isGameInProgress(phase) && (
+        <View style={[styles.emojiBar, { paddingBottom: Math.max(insets.bottom, 8) + 10 }]}>
+          {GAME_EMOJIS.map((emoji) => (
+            <TouchableOpacity
+              key={emoji}
+              style={styles.emojiButton}
+              onPress={() => handleSendEmoji(emoji)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.emojiButtonText}>{emoji}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
+      {/* 收到对手表情的气泡 */}
+      {receivedEmoji && (
+        <Animated.View
+          style={[
+            styles.emojiBubble,
+            {
+              top: insets.top + 120,
+              opacity: emojiBubbleAnim,
+              transform: [
+                { scale: emojiBubbleAnim },
+                {
+                  translateY: emojiBubbleAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [16, 0],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
+          <Text style={styles.emojiBubbleText}>{receivedEmoji}</Text>
+          <Text style={styles.emojiBubbleFrom}>{opponentNickname || '对手'}</Text>
+        </Animated.View>
+      )}
 
       {/* 对手离线提示条 */}
       {opponentOffline && phase !== GamePhase.FINISHED && (
@@ -826,6 +912,10 @@ const styles = StyleSheet.create({
   scoreSide: {
     alignItems: 'center',
     width: 120,
+  },
+  scoreAvatar: {
+    fontSize: 24,
+    marginBottom: 2,
   },
   scoreName: {
     color: 'rgba(255,255,255,0.8)',
@@ -1164,5 +1254,69 @@ const styles = StyleSheet.create({
     color: '#E65100',
     fontSize: 13,
     textAlign: 'center',
+  },
+  cancelMatchButton: {
+    marginTop: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 32,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#bbb',
+    backgroundColor: '#fff',
+  },
+  cancelMatchButtonText: {
+    color: '#666',
+    fontSize: 15,
+  },
+  emojiBar: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
+  emojiButton: {
+    width: 44,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 2,
+  },
+  emojiButtonText: {
+    fontSize: 22,
+  },
+  emojiBubble: {
+    position: 'absolute',
+    right: 20,
+    top: 150, // 运行时由 insets.top 覆盖
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    borderTopRightRadius: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#eee',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+  },
+  emojiBubbleText: {
+    fontSize: 34,
+  },
+  emojiBubbleFrom: {
+    color: '#999',
+    fontSize: 11,
+    marginTop: 2,
   },
 });

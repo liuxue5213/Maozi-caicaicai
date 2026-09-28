@@ -14,6 +14,7 @@
  *   5. 主动退出（close code 1000）立即判负
  *   6. 私密房间（邀请码）：建房/入房/开局/一次性校验 + 我的名次接口
  *   7. 未打过对局时"我的名次"为 0、未授权返回 401
+ *   8. 对局内表情转发（白名单/头像透传）+ 头像更新接口校验
  */
 import WebSocket from 'ws';
 
@@ -429,6 +430,57 @@ async function testMyRankNoGames() {
   assert(anon.status === 401, '未授权访问 /leaderboard/me 应返回 401');
 }
 
+// ---- 用例 8: 对局内表情转发 + 头像接口 ----
+async function testEmojiAndAvatar() {
+  const [uA, uB] = await Promise.all([registerUser('EM1'), registerUser('EM2')]);
+
+  // 头像接口：合法预设成功，非法值 400
+  const avRes = await fetch(`${API_URL}/user/avatar`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${uA.token}` },
+    body: JSON.stringify({ avatar: '🦊' }),
+  });
+  assert((await avRes.json()).data?.avatar === '🦊', '更新头像失败');
+  const badRes = await fetch(`${API_URL}/user/avatar`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${uA.token}` },
+    body: JSON.stringify({ avatar: '<script>' }),
+  });
+  assert(badRes.status === 400, '非法头像未被拒绝');
+
+  // 私密房间开局后互发表情
+  const sa = new TestSocket('em-A');
+  const sb = new TestSocket('em-B');
+  await Promise.all([sa.connect(), sb.connect()]);
+  sa.auth(uA.token);
+  sb.auth(uB.token);
+  await sleep(200);
+
+  sa.send('CREATE_PRIVATE_ROOM', { mode: 3 });
+  const created = await sa.waitFor('PRIVATE_ROOM_CREATED');
+  sb.send('JOIN_PRIVATE_ROOM', { code: created.payload.code });
+  await Promise.all([sa.waitFor('GAME_START'), sb.waitFor('GAME_START')]);
+
+  sa.send('SEND_EMOJI', { emoji: '👍' });
+  const got = await sb.waitFor('EMOJI_RECEIVED');
+  assert(got.payload.emoji === '👍', `B 收到的表情不正确: ${got.payload.emoji}`);
+
+  // 白名单校验：非法表情不应转发
+  sa.send('SEND_EMOJI', { emoji: '<script>' });
+  await sleep(400);
+  assert(
+    !sb.messages.some((m) => m.type === 'EMOJI_RECEIVED' && String(m.payload?.emoji).includes('script')),
+    '非法表情被转发了'
+  );
+
+  // GAME_START 应携带头像（A 刚设置了 🦊）
+  const startB = sb.messages.find((m) => m.type === 'GAME_START');
+  assert(startB.payload.opponent?.avatar === '🦊', `对手头像未透传: ${JSON.stringify(startB.payload.opponent)}`);
+
+  sa.terminate();
+  sb.terminate();
+}
+
 function assert(cond, message) {
   if (!cond) throw new Error(message);
 }
@@ -442,6 +494,7 @@ const cases = [
   ['主动退出立即判负', testAbandonForfeit],
   ['私密房间（邀请码）全流程', testPrivateRoom],
   ['我的名次接口', testMyRankNoGames],
+  ['对局表情与头像', testEmojiAndAvatar],
 ];
 
 console.log(`冒烟测试开始 -> ws=${WS_URL} api=${API_URL}`);

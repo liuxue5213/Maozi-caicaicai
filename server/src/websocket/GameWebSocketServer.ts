@@ -9,6 +9,7 @@ import {
   RoundResult,
   GAME_TIMINGS,
   AI_NICKNAMES,
+  GAME_EMOJIS,
   AiDifficulty,
   getGameCountTitle,
   getWinStreakTitle,
@@ -58,6 +59,8 @@ interface ConnectedClient {
   userId: string;
   username: string;
   nickname: string;
+  /** 头像（emoji 预设），随对局开始透传给对手 */
+  avatar: string | null;
   /** 段位分，用于按实力匹配（认证时载入） */
   rank: number;
   isAuthenticated: boolean;
@@ -66,6 +69,8 @@ interface ConnectedClient {
   matchingMode: GameMode | null;
   matchingSince: number | null;
   lastPing: number;
+  /** 上次发送表情时间，用于限频 */
+  lastEmojiAt: number;
   /** 消息速率限制：1 秒滑动窗口内的消息数 */
   msgWindowStart: number;
   msgCount: number;
@@ -86,6 +91,8 @@ const ROOM_CODE_LENGTH = 4;
 const PRIVATE_ROOM_TTL_MS = 10 * 60 * 1000;
 /** 单连接消息频率上限（每秒），超出后静默丢弃 */
 const WS_MSG_RATE_LIMIT = 30;
+/** 表情发送最小间隔（毫秒），防止刷屏 */
+const EMOJI_COOLDOWN_MS = 1500;
 
 interface GameRoom {
   id: string;
@@ -128,6 +135,7 @@ export class GameWebSocketServer {
         userId: '',
         username: '',
         nickname: '',
+        avatar: null,
         rank: 1000,
         isAuthenticated: false,
         currentGameId: null,
@@ -135,6 +143,7 @@ export class GameWebSocketServer {
         matchingMode: null,
         matchingSince: null,
         lastPing: Date.now(),
+        lastEmojiAt: 0,
         msgWindowStart: Date.now(),
         msgCount: 0,
       };
@@ -216,6 +225,9 @@ export class GameWebSocketServer {
       case ClientMessage.JOIN_PRIVATE_ROOM:
         if (client.isAuthenticated) this.handleJoinPrivateRoom(clientId, payload);
         break;
+      case ClientMessage.SEND_EMOJI:
+        if (client.isAuthenticated) this.handleSendEmoji(clientId, payload);
+        break;
       case ClientMessage.MAKE_CHOICE:
         if (client.isAuthenticated) this.handleMakeChoice(clientId, payload);
         break;
@@ -251,6 +263,7 @@ export class GameWebSocketServer {
     client.userId = user.id;
     client.username = user.username;
     client.nickname = user.nickname;
+    client.avatar = user.avatar;
     client.rank = db.getStats(user.id)?.rank ?? 1000;
     client.isAuthenticated = true;
     onlineUsers.add(user.id);
@@ -464,6 +477,50 @@ export class GameWebSocketServer {
     }
   }
 
+  /**
+   * 对局内快捷表情：校验白名单与限频后转发给对手。
+   * 人机对局中 AI 有几率随机回一个表情，增加趣味性。
+   */
+  private handleSendEmoji(clientId: string, payload: { emoji: string }): void {
+    const client = this.clients.get(clientId);
+    if (!client || !client.currentGameId) return;
+
+    const emoji = String(payload?.emoji || '');
+    if (!GAME_EMOJIS.includes(emoji as (typeof GAME_EMOJIS)[number])) return;
+    // 限频：间隔内重复发送静默丢弃
+    const now = Date.now();
+    if (now - client.lastEmojiAt < EMOJI_COOLDOWN_MS) return;
+    client.lastEmojiAt = now;
+
+    const game = this.games.get(client.currentGameId);
+    if (!game || game.phase === GamePhase.FINISHED) return;
+
+    const senderIdx = game.players.findIndex((p) => p.user.id === client.userId);
+    if (senderIdx < 0) return;
+    const opponentIdx = senderIdx === 0 ? 1 : 0;
+
+    if (game.isAi) {
+      // AI 有几率回一个随机表情
+      if (Math.random() < 0.6) {
+        const reply = GAME_EMOJIS[Math.floor(Math.random() * GAME_EMOJIS.length)];
+        const ws = game.players[senderIdx].ws;
+        setTimeout(() => {
+          if (this.games.has(game.id) && game.phase !== GamePhase.FINISHED) {
+            this.sendToClient(ws, { type: ServerMessage.EMOJI_RECEIVED, payload: { emoji: reply } });
+          }
+        }, 600 + Math.random() * 600);
+      }
+      return;
+    }
+
+    if (game.players[opponentIdx].connected) {
+      this.sendToClient(game.players[opponentIdx].ws, {
+        type: ServerMessage.EMOJI_RECEIVED,
+        payload: { emoji },
+      });
+    }
+  }
+
   private startGame(
     player1: ConnectedClient,
     player2: ConnectedClient | { user: DbUser; ws: WebSocket },
@@ -483,7 +540,7 @@ export class GameWebSocketServer {
             username: player1.username,
             passwordHash: '',
             nickname: player1.nickname,
-            avatar: null,
+            avatar: player1.avatar,
             createdAt: 0,
           },
           ws: player1.ws,
@@ -494,7 +551,7 @@ export class GameWebSocketServer {
         {
           user: 'user' in player2
             ? player2.user
-            : { id: player2.userId, username: player2.username, passwordHash: '', nickname: player2.nickname, avatar: null, createdAt: 0 },
+            : { id: player2.userId, username: player2.username, passwordHash: '', nickname: player2.nickname, avatar: player2.avatar, createdAt: 0 },
           ws: player2.ws,
           choice: null,
           score: 0,
@@ -527,7 +584,7 @@ export class GameWebSocketServer {
     }
 
     // 获取对手信息
-    const opponentUser = 'user' in player2 ? player2.user : { id: player2.userId, nickname: player2.nickname, avatar: null as string | null };
+    const opponentUser = 'user' in player2 ? player2.user : { id: player2.userId, nickname: player2.nickname, avatar: player2.avatar as string | null };
 
     // 通知双方游戏开始
     const p1Payload = {
@@ -543,7 +600,7 @@ export class GameWebSocketServer {
       (player2.ws as WebSocket).send(
         JSON.stringify({
           type: ServerMessage.GAME_START,
-          payload: { ...p1Payload, opponent: { id: player1.userId, nickname: player1.nickname, avatar: null } },
+          payload: { ...p1Payload, opponent: { id: player1.userId, nickname: player1.nickname, avatar: player1.avatar } },
         })
       );
     }
@@ -817,6 +874,7 @@ export class GameWebSocketServer {
     client.userId = user.id;
     client.username = user.username;
     client.nickname = user.nickname;
+    client.avatar = user.avatar;
     client.rank = db.getStats(user.id)?.rank ?? 1000;
     client.isAuthenticated = true;
     onlineUsers.add(user.id);

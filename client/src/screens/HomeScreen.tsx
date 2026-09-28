@@ -71,8 +71,13 @@ export function HomeScreen({ navigation }: HomeScreenProps) {
   return (
     <ScrollView style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top + 20 }]}>
-        <Text style={styles.welcome}>你好，{user?.nickname || '玩家'} 👋</Text>
-        <Text style={styles.onlineCount}>在线人数: {onlineCount}</Text>
+        <View style={styles.headerRow}>
+          <Text style={styles.headerAvatar}>{user?.avatar || '🐱'}</Text>
+          <View style={styles.headerTextCol}>
+            <Text style={styles.welcome}>你好，{user?.nickname || '玩家'} 👋</Text>
+            <Text style={styles.onlineCount}>在线人数: {onlineCount}</Text>
+          </View>
+        </View>
       </View>
 
       {/* 玩家信息卡片 */}
@@ -254,6 +259,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#4CAF50',
     marginTop: 4,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  headerAvatar: {
+    fontSize: 34,
+  },
+  headerTextCol: {
+    flex: 1,
   },
   statsCard: {
     backgroundColor: '#fff',

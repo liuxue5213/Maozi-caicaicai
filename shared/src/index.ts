@@ -115,6 +115,8 @@ export enum ClientMessage {
   // 私密房间（邀请码对战）
   CREATE_PRIVATE_ROOM = 'CREATE_PRIVATE_ROOM',
   JOIN_PRIVATE_ROOM = 'JOIN_PRIVATE_ROOM',
+  // 对局内快捷表情
+  SEND_EMOJI = 'SEND_EMOJI',
   // 心跳
   PING = 'PING',
   // 重连
@@ -142,6 +144,8 @@ export enum ServerMessage {
   PRIVATE_ROOM_CREATED = 'PRIVATE_ROOM_CREATED',
   // 好友加入私密房间，对局即将开始（服务器 -> 房主）
   PRIVATE_ROOM_JOINED = 'PRIVATE_ROOM_JOINED',
+  // 对手发来快捷表情（服务器 -> 对局另一方）
+  EMOJI_RECEIVED = 'EMOJI_RECEIVED',
   // 心跳
   PONG = 'PONG',
   // 错误
@@ -174,6 +178,14 @@ export interface JoinPrivateRoomPayload {
 export interface PrivateRoomCreatedPayload {
   code: string;
   mode: GameMode;
+}
+
+export interface SendEmojiPayload {
+  emoji: string;
+}
+
+export interface EmojiReceivedPayload {
+  emoji: string;
 }
 
 export interface MakeChoicePayload {
@@ -310,6 +322,19 @@ export const AI_NICKNAMES = [
   '拳王小明', '剪刀手阿艺', '石头大叔', '布艺少女', '随机达人',
   '闪电出拳', '慢半拍', '常胜将军', '猜拳萌新', '神秘人',
 ];
+
+// ---- 对局内快捷表情（白名单，前后端共享校验） ----
+
+export const GAME_EMOJIS = ['👍', '😂', '😭', '😱', '🔥', '👏', '🤝', '🤡'] as const;
+
+// ---- 头像预设（emoji 头像，无需上传） ----
+
+export const AVATAR_PRESETS = [
+  '🐱', '🐶', '🦊', '🐻', '🐼', '🐯', '🦁', '🐮',
+  '🐸', '🐵', '🐔', '🐧', '🦉', '🦄', '🐲', '👻',
+] as const;
+
+export const DEFAULT_AVATAR = '🐱';
 
 // ---- 称号系统（前后端共享） ----
 

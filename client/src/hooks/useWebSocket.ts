@@ -23,6 +23,8 @@ interface UseWebSocketOptions {
   onPrivateRoomCreated?: (payload: any) => void;
   /** 好友加入私密房间，对局即将开始（房主收到） */
   onPrivateRoomJoined?: (payload: any) => void;
+  /** 对手发来快捷表情 */
+  onEmojiReceived?: (payload: any) => void;
   onAuthResult?: (payload: any) => void;
   onError?: (error: string) => void;
 }
@@ -89,6 +91,9 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         break;
       case ServerMessage.PRIVATE_ROOM_JOINED:
         opts.onPrivateRoomJoined?.(message.payload);
+        break;
+      case ServerMessage.EMOJI_RECEIVED:
+        opts.onEmojiReceived?.(message.payload);
         break;
       case ServerMessage.ERROR:
         opts.onError?.(message.payload?.error || '未知错误');
@@ -244,6 +249,13 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     [sendMessage]
   );
 
+  const sendEmoji = useCallback(
+    (emoji: string) => {
+      sendMessage(ClientMessage.SEND_EMOJI, { emoji });
+    },
+    [sendMessage]
+  );
+
   // 清理
   useEffect(() => {
     return () => {
@@ -264,5 +276,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     makeChoice,
     createPrivateRoom,
     joinPrivateRoom,
+    sendEmoji,
   };
 }
