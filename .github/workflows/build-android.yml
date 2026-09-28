@@ -32,10 +32,11 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          accept-android-sdk-licenses: true
+      # ubuntu-latest runner 已预装 Android SDK（ANDROID_HOME），
+      # android-actions/setup-android 曾连续多日上游损坏导致整个构建失败，
+      # 这里只接受许可证即可，不再调用该 action
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
 
       - name: Install shared dependencies
         run: |
