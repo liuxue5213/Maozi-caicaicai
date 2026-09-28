@@ -64,6 +64,15 @@ export function ProfileScreen() {
   /** 正在回放的对局与当前轮下标 */
   const [replayItem, setReplayItem] = useState<HistoryItem | null>(null);
   const [replayIndex, setReplayIndex] = useState(0);
+  /** 修改密码 / 注销账号弹窗 */
+  const [passwordModal, setPasswordModal] = useState(false);
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [deleteModal, setDeleteModal] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleting, setDeleting] = useState(false);
   const [soundOn, setSoundOn] = useState(!isSoundMuted());
   const [avatarModal, setAvatarModal] = useState(false);
   const [savingAvatar, setSavingAvatar] = useState(false);
@@ -103,6 +112,55 @@ export function ProfileScreen() {
       Alert.alert('错误', error.message || '头像保存失败');
     } finally {
       setSavingAvatar(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (savingPassword) return;
+    if (!oldPassword || !newPassword || !confirmPassword) {
+      Alert.alert('提示', '请填写完整');
+      return;
+    }
+    if (newPassword.length < 6) {
+      Alert.alert('提示', '新密码长度至少 6 位');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      Alert.alert('提示', '两次输入的新密码不一致');
+      return;
+    }
+    setSavingPassword(true);
+    try {
+      await api.changePassword(oldPassword, newPassword);
+      setPasswordModal(false);
+      setOldPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      Alert.alert('成功', '密码已修改，下次登录请使用新密码');
+    } catch (error: any) {
+      Alert.alert('错误', error.message || '修改失败');
+    } finally {
+      setSavingPassword(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (deleting) return;
+    if (!deletePassword) {
+      Alert.alert('提示', '请输入密码确认注销');
+      return;
+    }
+    setDeleting(true);
+    try {
+      await api.deleteAccount(deletePassword);
+      setDeleteModal(false);
+      Alert.alert('已注销', '你的全部数据已删除，感谢曾经游玩', [
+        { text: '确定', onPress: logout },
+      ]);
+    } catch (error: any) {
+      Alert.alert('错误', error.message || '注销失败');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -347,7 +405,7 @@ export function ProfileScreen() {
           <Text style={[styles.settingLabel, { color: t.text }]}>🔊 对局音效</Text>
           <Switch value={soundOn} onValueChange={handleToggleSound} />
         </View>
-        <View style={styles.settingRow}>
+        <View style={[styles.settingRow, { borderBottomColor: t.border }]}>
           <Text style={[styles.settingLabel, { color: t.text }]}>🎨 外观</Text>
           <View style={[styles.appearanceRow, { backgroundColor: t.background }]}>
             {(['system', 'light', 'dark'] as const).map((pref) => (
@@ -372,6 +430,10 @@ export function ProfileScreen() {
             ))}
           </View>
         </View>
+        <TouchableOpacity style={styles.settingRow} onPress={() => setPasswordModal(true)}>
+          <Text style={[styles.settingLabel, { color: t.text }]}>🔑 修改密码</Text>
+          <Text style={[styles.settingArrow, { color: t.textMuted }]}>›</Text>
+        </TouchableOpacity>
       </View>
 
       {/* 退出登录 */}
@@ -379,7 +441,12 @@ export function ProfileScreen() {
         style={[styles.logoutButton, { backgroundColor: t.card, borderColor: t.border }]}
         onPress={handleLogout}
       >
-        <Text style={[styles.logoutText, { color: t.danger }]}>退出登录</Text>
+        <Text style={[styles.logoutText, { color: t.textSecondary }]}>退出登录</Text>
+      </TouchableOpacity>
+
+      {/* 危险区：注销账号 */}
+      <TouchableOpacity style={styles.deleteAccountButton} onPress={() => setDeleteModal(true)}>
+        <Text style={styles.deleteAccountText}>注销账号（删除全部数据）</Text>
       </TouchableOpacity>
 
       {/* 头像选择弹窗 */}
@@ -508,6 +575,95 @@ export function ProfileScreen() {
 
             <TouchableOpacity style={styles.avatarModalCancel} onPress={() => setReplayItem(null)}>
               <Text style={[styles.avatarModalCancelText, { color: t.textMuted }]}>关闭</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 修改密码弹窗 */}
+      <Modal
+        visible={passwordModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPasswordModal(false)}
+      >
+        <View style={styles.replayOverlay}>
+          <View style={[styles.replayCard, { backgroundColor: t.card }]}>
+            <Text style={[styles.replayTitle, { color: t.text }]}>修改密码</Text>
+            <TextInput
+              style={[styles.modalInput, { backgroundColor: t.background, borderColor: t.border, color: t.text }]}
+              placeholder="当前密码"
+              placeholderTextColor={t.textMuted}
+              value={oldPassword}
+              onChangeText={setOldPassword}
+              secureTextEntry
+              autoFocus
+            />
+            <TextInput
+              style={[styles.modalInput, { backgroundColor: t.background, borderColor: t.border, color: t.text }]}
+              placeholder="新密码（至少 6 位）"
+              placeholderTextColor={t.textMuted}
+              value={newPassword}
+              onChangeText={setNewPassword}
+              secureTextEntry
+            />
+            <TextInput
+              style={[styles.modalInput, { backgroundColor: t.background, borderColor: t.border, color: t.text }]}
+              placeholder="确认新密码"
+              placeholderTextColor={t.textMuted}
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              secureTextEntry
+            />
+            <TouchableOpacity
+              style={[styles.modalPrimaryButton, { backgroundColor: t.primary }, savingPassword && { opacity: 0.6 }]}
+              onPress={handleChangePassword}
+              disabled={savingPassword}
+            >
+              <Text style={[styles.modalPrimaryButtonText, { color: t.onGradient }]}>
+                {savingPassword ? '保存中...' : '保存新密码'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.avatarModalCancel} onPress={() => setPasswordModal(false)}>
+              <Text style={[styles.avatarModalCancelText, { color: t.textMuted }]}>取消</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 注销账号弹窗 */}
+      <Modal
+        visible={deleteModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDeleteModal(false)}
+      >
+        <View style={styles.replayOverlay}>
+          <View style={[styles.replayCard, { backgroundColor: t.card }]}>
+            <Text style={[styles.replayTitle, { color: t.danger }]}>⚠️ 注销账号</Text>
+            <Text style={[styles.deleteWarnText, { color: t.textSecondary }]}>
+              将永久删除你的账号、战绩、成就、好友和全部对局记录，且无法恢复。确定要继续吗？
+            </Text>
+            <TextInput
+              style={[styles.modalInput, { backgroundColor: t.background, borderColor: t.border, color: t.text }]}
+              placeholder="输入登录密码确认"
+              placeholderTextColor={t.textMuted}
+              value={deletePassword}
+              onChangeText={setDeletePassword}
+              secureTextEntry
+              autoFocus
+            />
+            <TouchableOpacity
+              style={[styles.modalPrimaryButton, { backgroundColor: t.danger }, deleting && { opacity: 0.6 }]}
+              onPress={handleDeleteAccount}
+              disabled={deleting}
+            >
+              <Text style={[styles.modalPrimaryButtonText, { color: '#fff' }]}>
+                {deleting ? '注销中...' : '永久删除我的账号'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.avatarModalCancel} onPress={() => setDeleteModal(false)}>
+              <Text style={[styles.avatarModalCancelText, { color: t.textMuted }]}>取消</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -773,6 +929,45 @@ const styles = StyleSheet.create({
   },
   replayNavText: {
     fontSize: 14,
+  },
+  modalInput: {
+    width: '100%',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    fontSize: 15,
+    marginTop: 10,
+  },
+  modalPrimaryButton: {
+    width: '100%',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 14,
+  },
+  modalPrimaryButtonText: {
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  settingArrow: {
+    fontSize: 20,
+  },
+  deleteAccountButton: {
+    alignItems: 'center',
+    paddingVertical: 14,
+    marginBottom: 30,
+  },
+  deleteAccountText: {
+    color: '#C62828',
+    fontSize: 14,
+  },
+  deleteWarnText: {
+    fontSize: 13,
+    lineHeight: 20,
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 4,
   },
   nickname: {
     color: '#333',

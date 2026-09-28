@@ -19,6 +19,7 @@
  *  10. 成就计算（与实际对局胜负对账）
  *  11. 对局回放数据（双方视角镜像/回合结果自洽/胜轮数等于得分）
  *  12. 观战好友对局（视角一致/观战占用/终局通知/结束后释放）
+ *  13. 账号安全（改密码校验/注销后 token/登录/好友级联/WS 认证拒绝）
  */
 import WebSocket from 'ws';
 
@@ -762,6 +763,75 @@ async function testSpectate() {
   sb.terminate();
 }
 
+// ---- 用例 13: 账号安全（改密码/注销） ----
+async function testAccountSecurity() {
+  const [uA, uB] = await Promise.all([registerUser('AS1'), registerUser('AS2')]);
+  const hdr = (t) => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${t}` });
+
+  // 修改密码：旧密码错误被拒；正确后新密码可登录、旧密码失效
+  const bad = await fetch(`${API_URL}/user/password`, {
+    method: 'PUT', headers: hdr(uA.token),
+    body: JSON.stringify({ oldPassword: 'wrong-old', newPassword: 'newpass456' }),
+  });
+  assert(bad.status === 400, '旧密码错误未被拒绝');
+  const shortPw = await fetch(`${API_URL}/user/password`, {
+    method: 'PUT', headers: hdr(uA.token),
+    body: JSON.stringify({ oldPassword: 'password123', newPassword: '123' }),
+  });
+  assert(shortPw.status === 400, '过短新密码未被拒绝');
+  const ok = await fetch(`${API_URL}/user/password`, {
+    method: 'PUT', headers: hdr(uA.token),
+    body: JSON.stringify({ oldPassword: 'password123', newPassword: 'newpass456' }),
+  });
+  assert(ok.status === 200, '修改密码失败');
+  const oldLogin = await fetch(`${API_URL}/auth/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: uA.user.username, password: 'password123' }),
+  });
+  assert(oldLogin.status === 401, '旧密码仍可登录');
+  const newLogin = await fetch(`${API_URL}/auth/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: uA.user.username, password: 'newpass456' }),
+  });
+  const newLoginBody = await newLogin.json();
+  assert(newLoginBody.success, '新密码登录失败');
+
+  // 建好友关系，验证注销后对方列表级联清理
+  await fetch(`${API_URL}/user/friends`, {
+    method: 'POST', headers: hdr(uB.token),
+    body: JSON.stringify({ username: uA.user.username }),
+  });
+
+  // 注销：密码错误被拒；正确后 token 失效、登录失效、对方好友列表清理
+  const badDel = await fetch(`${API_URL}/user/account`, {
+    method: 'DELETE', headers: hdr(uB.token),
+    body: JSON.stringify({ password: 'wrong' }),
+  });
+  assert(badDel.status === 400, '注销密码错误未被拒绝');
+  const del = await fetch(`${API_URL}/user/account`, {
+    method: 'DELETE', headers: hdr(uA.token),
+    body: JSON.stringify({ password: 'newpass456' }),
+  });
+  assert((await del.json()).success, '注销失败');
+  const meAfter = await fetch(`${API_URL}/user/me`, { headers: hdr(uA.token) });
+  assert(meAfter.status === 404 || meAfter.status === 401, '注销后旧 token 仍可访问');
+  const loginAfter = await fetch(`${API_URL}/auth/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: uA.user.username, password: 'newpass456' }),
+  });
+  assert(loginAfter.status === 401, '注销后仍可登录');
+  const friendList = await (await fetch(`${API_URL}/user/friends`, { headers: hdr(uB.token) })).json();
+  assert(friendList.data.length === 0, '注销后对方好友列表未清理');
+
+  // 已注销用户无法再通过 WS 认证
+  const s = new TestSocket('as-del');
+  await s.connect();
+  s.auth(uA.token);
+  const authFail = await s.waitFor('AUTH_RESULT', (m) => m.payload?.success === false);
+  assert(authFail.payload.success === false, '已注销账号 WS 认证未被拒绝');
+  s.terminate();
+}
+
 function assert(cond, message) {
   if (!cond) throw new Error(message);
 }
@@ -780,6 +850,7 @@ const cases = [
   ['成就计算', testAchievements],
   ['对局回放数据', testReplayRounds],
   ['观战好友对局', testSpectate],
+  ['账号安全（改密码/注销）', testAccountSecurity],
 ];
 
 console.log(`冒烟测试开始 -> ws=${WS_URL} api=${API_URL}`);

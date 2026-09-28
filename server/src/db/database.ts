@@ -49,6 +49,20 @@ export const db = {
   updateUserAvatar(userId: string, avatar: string | null): void {
     getDatabase().prepare('UPDATE users SET avatar = ? WHERE id = ?').run(avatar, userId);
   },
+  updateUserPassword(userId: string, passwordHash: string): void {
+    getDatabase().prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(passwordHash, userId);
+  },
+  /**
+   * 注销账号：删除本人所有数据（对局记录、战绩、好友随外键级联删除）。
+   * 对局记录涉及对方的部分一并删除（双方历史都不再保留该对局）。
+   */
+  deleteAccount(userId: string): void {
+    getDatabase().transaction(() => {
+      getDatabase().prepare('DELETE FROM game_records WHERE player1_id = ? OR player2_id = ?').run(userId, userId);
+      // user_stats / friends 均 ON DELETE CASCADE，随用户行一起删除
+      getDatabase().prepare('DELETE FROM users WHERE id = ?').run(userId);
+    })();
+  },
   getStats(userId: string): DbStats | null {
     return toStats(getDatabase().prepare('SELECT * FROM user_stats WHERE user_id = ?').get(userId) as Record<string, unknown> | undefined);
   },

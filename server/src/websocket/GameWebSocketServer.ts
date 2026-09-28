@@ -197,6 +197,13 @@ export class GameWebSocketServer {
     this.heartbeatInterval = setInterval(() => {
       const now = Date.now();
       this.clients.forEach((client, clientId) => {
+        // 已注销账号的连接直接断开
+        if (client.isAuthenticated && !db.findUserById(client.userId)) {
+          console.log(`[WebSocket] 账号已注销，断开连接: ${client.userId}`);
+          client.ws.terminate();
+          this.handleDisconnect(clientId);
+          return;
+        }
         if (now - client.lastPing > heartbeatTimeout) {
           console.log(`[WebSocket] 心跳超时，断开连接: ${client.userId || clientId}`);
           client.ws.terminate();

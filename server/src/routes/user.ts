@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import bcrypt from 'bcryptjs';
 import { db, onlineUsers, inGameUsers } from '../db/database';
 import { authMiddleware } from '../middleware/auth';
 import { AVATAR_PRESETS, FriendInfo, buildAchievementProgress } from '@maozi/shared';
@@ -120,6 +121,57 @@ userRouter.get('/achievements', (req: any, res: Response) => {
     friends: db.getFriendsCount(req.userId!),
   });
   res.json({ success: true, data: progress });
+});
+
+// ---- 账号安全 ----
+
+// 修改密码
+userRouter.put('/password', async (req: any, res: Response) => {
+  const { oldPassword, newPassword } = req.body;
+  if (typeof oldPassword !== 'string' || typeof newPassword !== 'string' || !oldPassword || !newPassword) {
+    res.status(400).json({ success: false, error: '请填写当前密码和新密码' });
+    return;
+  }
+  if (newPassword.length < 6) {
+    res.status(400).json({ success: false, error: '新密码长度至少 6 位' });
+    return;
+  }
+  const user = db.findUserById(req.userId!);
+  if (!user) {
+    res.status(404).json({ success: false, error: '用户不存在' });
+    return;
+  }
+  const match = await bcrypt.compare(oldPassword, user.passwordHash);
+  if (!match) {
+    res.status(400).json({ success: false, error: '当前密码不正确' });
+    return;
+  }
+  const passwordHash = await bcrypt.hash(newPassword, 10);
+  db.updateUserPassword(req.userId!, passwordHash);
+  res.json({ success: true, data: {} });
+});
+
+// 注销账号（需密码确认；删除本人全部数据并清除在线状态）
+userRouter.delete('/account', async (req: any, res: Response) => {
+  const { password } = req.body;
+  if (typeof password !== 'string' || !password) {
+    res.status(400).json({ success: false, error: '请输入密码确认注销' });
+    return;
+  }
+  const user = db.findUserById(req.userId!);
+  if (!user) {
+    res.status(404).json({ success: false, error: '用户不存在' });
+    return;
+  }
+  const match = await bcrypt.compare(password, user.passwordHash);
+  if (!match) {
+    res.status(400).json({ success: false, error: '密码不正确' });
+    return;
+  }
+  db.deleteAccount(req.userId!);
+  onlineUsers.delete(req.userId!);
+  inGameUsers.delete(req.userId!);
+  res.json({ success: true, data: {} });
 });
 
 // 获取游戏记录（按玩家视角返回：对手昵称、双方比分、胜负）

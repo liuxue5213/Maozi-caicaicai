@@ -110,6 +110,20 @@ export const api = {
       body: { avatar },
     }),
 
+  // 修改密码
+  changePassword: (oldPassword: string, newPassword: string) =>
+    apiRequest('/user/password', {
+      method: 'PUT',
+      body: { oldPassword, newPassword },
+    }),
+
+  // 注销账号（需密码确认）
+  deleteAccount: (password: string) =>
+    apiRequest('/user/account', {
+      method: 'DELETE',
+      body: { password },
+    }),
+
   // 排行榜
   getLeaderboard: (type: 'wins' | 'streak' | 'rank' = 'wins', limit = 100) =>
     apiRequest(`/leaderboard?type=${type}&limit=${limit}`),
