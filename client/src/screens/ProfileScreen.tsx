@@ -45,6 +45,14 @@ interface AchievementItem {
   target: number;
 }
 
+interface InsightsData {
+  sampleGames: number;
+  choiceCounts: { ROCK: number; SCISSORS: number; PAPER: number };
+  choiceWinRates: { ROCK: number; SCISSORS: number; PAPER: number };
+  vsAi: { games: number; wins: number; winRate: number };
+  vsHuman: { games: number; wins: number; winRate: number };
+}
+
 function formatTime(ts: number): string {
   const d = new Date(ts);
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -61,6 +69,7 @@ export function ProfileScreen() {
   const [newNickname, setNewNickname] = useState(user?.nickname || '');
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [achievements, setAchievements] = useState<AchievementItem[]>([]);
+  const [insights, setInsights] = useState<InsightsData | null>(null);
   /** 正在回放的对局与当前轮下标 */
   const [replayItem, setReplayItem] = useState<HistoryItem | null>(null);
   const [replayIndex, setReplayIndex] = useState(0);
@@ -77,11 +86,12 @@ export function ProfileScreen() {
   const [avatarModal, setAvatarModal] = useState(false);
   const [savingAvatar, setSavingAvatar] = useState(false);
 
-  // 每次切到"我的"页时刷新历史与成就
+  // 每次切到"我的"页时刷新历史、成就与统计
   useFocusEffect(
     useCallback(() => {
       api.getHistory(20).then(setHistory).catch(() => {});
       api.getAchievements().then(setAchievements).catch(() => {});
+      api.getInsights().then(setInsights).catch(() => {});
     }, [])
   );
 
@@ -318,6 +328,68 @@ export function ProfileScreen() {
           </View>
         </View>
       )}
+
+      {/* 出拳统计 */}
+      {insights && insights.sampleGames > 0 && (() => {
+        const total = insights.choiceCounts.ROCK + insights.choiceCounts.SCISSORS + insights.choiceCounts.PAPER;
+        const pct = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0);
+        const rows = [
+          { key: 'ROCK', emoji: '✊', label: '石头' },
+          { key: 'SCISSORS', emoji: '✌️', label: '剪刀' },
+          { key: 'PAPER', emoji: '✋', label: '布' },
+        ] as const;
+        return (
+          <View style={[styles.insightCard, { backgroundColor: t.card, borderColor: t.border }]}>
+            <View style={styles.achievementTitleRow}>
+              <Text style={[styles.sectionTitle, { color: t.text }]}>📊 出拳统计</Text>
+              <Text style={[styles.achievementCount, { color: t.textMuted }]}>
+                基于最近 {insights.sampleGames} 局
+              </Text>
+            </View>
+            {total > 0 ? (
+              rows.map((row) => (
+                <View key={row.key} style={styles.insightRow}>
+                  <Text style={styles.insightEmoji}>{row.emoji}</Text>
+                  <View style={styles.insightBarCol}>
+                    <View style={[styles.insightBarBg, { backgroundColor: t.background }]}>
+                      <View
+                        style={[
+                          styles.insightBarFill,
+                          { backgroundColor: t.primary, width: `${pct(insights.choiceCounts[row.key])}%` },
+                        ]}
+                      />
+                    </View>
+                  </View>
+                  <Text style={[styles.insightPercent, { color: t.text }]}>
+                    {pct(insights.choiceCounts[row.key])}%
+                  </Text>
+                  <Text style={[styles.insightWinRate, { color: t.textSecondary }]}>
+                    胜率 {insights.choiceWinRates[row.key]}%
+                  </Text>
+                </View>
+              ))
+            ) : (
+              <Text style={[styles.historyEmpty, { color: t.textMuted }]}>
+                打完带有回放记录的对局后，这里会出现你的出拳倾向分析
+              </Text>
+            )}
+            <View style={[styles.insightVsRow, { borderTopColor: t.border }]}>
+              <View style={styles.insightVsCell}>
+                <Text style={[styles.insightVsLabel, { color: t.textSecondary }]}>🤖 人机对战</Text>
+                <Text style={[styles.insightVsValue, { color: t.text }]}>
+                  {insights.vsAi.games} 局 · 胜率 {insights.vsAi.winRate}%
+                </Text>
+              </View>
+              <View style={styles.insightVsCell}>
+                <Text style={[styles.insightVsLabel, { color: t.textSecondary }]}>⚔️ 真人对战</Text>
+                <Text style={[styles.insightVsValue, { color: t.text }]}>
+                  {insights.vsHuman.games} 局 · 胜率 {insights.vsHuman.winRate}%
+                </Text>
+              </View>
+            </View>
+          </View>
+        );
+      })()}
 
       {/* 最近对局 */}
       <View style={[styles.historyCard, { backgroundColor: t.card, borderColor: t.border }]}>
@@ -841,6 +913,65 @@ const styles = StyleSheet.create({
     width: 12,
     height: 12,
     borderRadius: 6,
+  },
+  insightCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    borderWidth: 1,
+  },
+  insightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 10,
+  },
+  insightEmoji: {
+    fontSize: 20,
+    width: 30,
+    textAlign: 'center',
+  },
+  insightBarCol: {
+    flex: 1,
+  },
+  insightBarBg: {
+    height: 10,
+    borderRadius: 5,
+    overflow: 'hidden',
+  },
+  insightBarFill: {
+    height: '100%',
+    borderRadius: 5,
+  },
+  insightPercent: {
+    width: 40,
+    fontSize: 13,
+    fontWeight: 'bold',
+    textAlign: 'right',
+  },
+  insightWinRate: {
+    width: 62,
+    fontSize: 11,
+    textAlign: 'right',
+  },
+  insightVsRow: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    marginTop: 16,
+    paddingTop: 12,
+  },
+  insightVsCell: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  insightVsLabel: {
+    fontSize: 12,
+  },
+  insightVsValue: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginTop: 4,
   },
   appearanceRow: {
     flexDirection: 'row',

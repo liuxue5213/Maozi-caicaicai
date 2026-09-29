@@ -20,6 +20,7 @@
  *  11. 对局回放数据（双方视角镜像/回合结果自洽/胜轮数等于得分）
  *  12. 观战好友对局（视角一致/观战占用/终局通知/结束后释放）
  *  13. 账号安全（改密码校验/注销后 token/登录/好友级联/WS 认证拒绝）
+ *  14. 出拳数据统计（出拳分布与各手势胜率与消息流精确对账）
  */
 import WebSocket from 'ws';
 
@@ -832,6 +833,65 @@ async function testAccountSecurity() {
   s.terminate();
 }
 
+// ---- 用例 14: 出拳数据统计 ----
+async function testInsights() {
+  const user = await registerUser('IN1');
+  const s = new TestSocket('in-A');
+  await s.connect();
+  s.auth(user.token);
+  await sleep(200);
+
+  // 打一局 AI（新注册用户，历史为空，统计应与消息流精确对账）
+  s.send('START_AI_MATCH', { mode: 3, aiDifficulty: 'normal' });
+  await s.waitFor('GAME_START');
+  for (let i = 0; i < 40; i++) {
+    autoPlay([s]);
+    const done = await Promise.race([
+      s.waitFor('GAME_OVER').then(() => true),
+      sleep(1500).then(() => false),
+    ]);
+    if (done) break;
+  }
+  assert(s.messages.some((m) => m.type === 'GAME_OVER'), 'AI 对局未结束');
+
+  // 从消息流统计本局出拳与胜负
+  const expect = { ROCK: 0, SCISSORS: 0, PAPER: 0 };
+  const expectWins = { ROCK: 0, SCISSORS: 0, PAPER: 0 };
+  for (const m of s.messages) {
+    if (m.type === 'ROUND_RESULT') {
+      const c = m.payload.playerChoice;
+      if (c in expect) {
+        expect[c]++;
+        if (m.payload.result === 'WIN') expectWins[c]++;
+      }
+    }
+  }
+  const expectTotal = expect.ROCK + expect.SCISSORS + expect.PAPER;
+  assert(expectTotal > 0, '测试未统计到任何回合');
+
+  const res = await fetch(`${API_URL}/user/insights`, {
+    headers: { Authorization: `Bearer ${user.token}` },
+  });
+  const body = await res.json();
+  assert(body.success, 'insights 接口失败');
+  const d = body.data;
+  assert(d.sampleGames === 1, `sampleGames 应为 1: ${d.sampleGames}`);
+  assert(d.vsAi.games === 1 && d.vsHuman.games === 0, '人机/真人场次分类错误');
+  const rate = (w, g) => (g > 0 ? Math.round((w / g) * 100) : 0);
+  for (const c of ['ROCK', 'SCISSORS', 'PAPER']) {
+    assert(
+      d.choiceCounts[c] === expect[c],
+      `${c} 出拳数对账失败: got=${d.choiceCounts[c]}, expect=${expect[c]}`
+    );
+    assert(
+      d.choiceWinRates[c] === rate(expectWins[c], expect[c]),
+      `${c} 胜率对账失败: got=${d.choiceWinRates[c]}`
+    );
+  }
+
+  s.terminate();
+}
+
 function assert(cond, message) {
   if (!cond) throw new Error(message);
 }
@@ -851,6 +911,7 @@ const cases = [
   ['对局回放数据', testReplayRounds],
   ['观战好友对局', testSpectate],
   ['账号安全（改密码/注销）', testAccountSecurity],
+  ['出拳数据统计', testInsights],
 ];
 
 console.log(`冒烟测试开始 -> ws=${WS_URL} api=${API_URL}`);

@@ -210,4 +210,14 @@ export const api = {
         target: number;
       }>
     >('/user/achievements'),
+
+  // 出拳数据统计（最近对局聚合）
+  getInsights: () =>
+    apiRequest<{
+      sampleGames: number;
+      choiceCounts: { ROCK: number; SCISSORS: number; PAPER: number };
+      choiceWinRates: { ROCK: number; SCISSORS: number; PAPER: number };
+      vsAi: { games: number; wins: number; winRate: number };
+      vsHuman: { games: number; wins: number; winRate: number };
+    }>('/user/insights'),
 };

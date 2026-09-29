@@ -123,6 +123,53 @@ userRouter.get('/achievements', (req: any, res: Response) => {
   res.json({ success: true, data: progress });
 });
 
+// 数据统计：从最近对局的回放数据聚合出拳分布、各手势胜率、人机/真人战绩
+userRouter.get('/insights', (req: any, res: Response) => {
+  const records = db.getUserGameRecords(req.userId!, 100);
+  const choices = { ROCK: 0, SCISSORS: 0, PAPER: 0 } as Record<string, number>;
+  const wins = { ROCK: 0, SCISSORS: 0, PAPER: 0 } as Record<string, number>;
+  const played = { ROCK: 0, SCISSORS: 0, PAPER: 0 } as Record<string, number>;
+  let vsAi = { games: 0, wins: 0 };
+  let vsHuman = { games: 0, wins: 0 };
+
+  for (const r of records) {
+    const isPlayer1 = r.player1Id === req.userId;
+    const isAi = !r.player2Id;
+    const won = r.scorePlayer1 !== r.scorePlayer2 && (isPlayer1 ? Boolean(r.player1Won) : !Boolean(r.player1Won));
+    const bucket = isAi ? vsAi : vsHuman;
+    bucket.games++;
+    if (won) bucket.wins++;
+
+    // 回放轮次为 player1 视角，转为本玩家视角后聚合
+    for (const rd of r.rounds ?? []) {
+      const mine = isPlayer1 ? rd.p1 : rd.p2;
+      const result = isPlayer1 ? rd.r : rd.r === 'WIN' ? 'LOSE' : rd.r === 'LOSE' ? 'WIN' : 'DRAW';
+      if (mine in choices) {
+        choices[mine]++;
+        played[mine]++;
+        if (result === 'WIN') wins[mine]++;
+      }
+    }
+  }
+
+  const rate = (w: number, g: number) => (g > 0 ? Math.round((w / g) * 100) : 0);
+
+  res.json({
+    success: true,
+    data: {
+      sampleGames: records.length,
+      choiceCounts: choices,
+      choiceWinRates: {
+        ROCK: rate(wins.ROCK, played.ROCK),
+        SCISSORS: rate(wins.SCISSORS, played.SCISSORS),
+        PAPER: rate(wins.PAPER, played.PAPER),
+      },
+      vsAi: { ...vsAi, winRate: rate(vsAi.wins, vsAi.games) },
+      vsHuman: { ...vsHuman, winRate: rate(vsHuman.wins, vsHuman.games) },
+    },
+  });
+});
+
 // ---- 账号安全 ----
 
 // 修改密码
